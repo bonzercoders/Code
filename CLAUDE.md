@@ -25,8 +25,14 @@ Single-user application. Do not over-engineer for enterprise scale or multi-tena
 
 Code
 ├── backend
-│   ├── bosun_multimodal
+│   ├── boson_multimodal
 │   ├── RealtimeSTT
+│   ├── services
+│   │   ├── __init__.py
+│   │   ├── pipeline_types.py
+│   │   ├── stt_service.py
+│   │   ├── chat_service.py
+│   │   └── tts_service.py
 │   ├── fastserver.py
 │   └── stream2sentence.py
 ├── frontend
