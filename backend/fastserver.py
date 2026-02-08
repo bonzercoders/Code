@@ -84,7 +84,6 @@ class ModelSettings:
 
 class PipeQueues:
     """Queue Management for various pipeline stages"""
-
     def __init__(self):
         self.stt_queue = asyncio.Queue()
         self.sentence_queue = asyncio.Queue()
