@@ -84,6 +84,7 @@ class ModelSettings:
 
 class PipeQueues:
     """Queue Management for various pipeline stages"""
+    
     def __init__(self):
         self.stt_queue = asyncio.Queue()
         self.sentence_queue = asyncio.Queue()
@@ -97,7 +98,6 @@ Callback = Callable[..., Optional[Awaitable[None]]]
 
 class STT:
     """Realtime transcription of user's audio prompt"""
-
     def __init__(self,
         on_transcription_update: Optional[Callback] = None,
         on_transcription_stabilized: Optional[Callback] = None,
