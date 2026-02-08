@@ -1,38 +1,62 @@
-# AGENTS.md
-## Project Overview
-Low-latency voice chat application with a FastAPI (Python) backend and JavaScript (React TypeScript) frontend. Single-user application — do not over-engineer for enterprise scale or multi-tenancy.
+# Project Overview
+
+Low-latency voice chat application with a FastAPI (Python) backend and JavaScript (React TypeScript) frontend. 
+Single-user application. Do not over-engineer for enterprise scale or multi-tenancy.
+
+## Stack/Libraries
+
+- Backend: Python, FastAPI, Supabase.
+- Frontend: JavaScript (React TypeScript), shadcn ui, Tailwind CSS.
+- STT: RealtimeSTT (faster-whisper).
+- TTS: Higgs Audio, Chatterbox.
+- stream2sentence — sentence boundary detection.
 
 ## Principles/Style
+
 - Adhere to KISS, YAGNI principles.
-- Functional programming style.
 - Write code a human can read and maintain.
 
-## Programming Languages
-**Python**
-  *Preferred patterns:*
-  - `asyncio.create_task()` for fire-and-forget or managed background work
+## Patterns
+
   - Producer/consumer with `asyncio.Queue`
-  - `asyncio.as_completed()` when processing results as they arrive
+  - `asyncio.create_task()` with `Queue.task_done()`
 
+## File Structure (current)
 
-### Key Libraries
-- RealtimeSTT (faster-whisper) — speech-to-text
-- Higgs Audio — TTS service
-- SQLite — database
-- FastAPI — backend server
-- stream2sentence — sentence boundary detection
-- shadcn ui
-
-## Code Organization
 Code
 ├── backend
 │   ├── bosun_multimodal
 │   ├── RealtimeSTT
-│   ├── database.db
-│   ├── database_director.py
 │   ├── fastserver.py
 │   └── stream2sentence.py
 ├── frontend
+│   └── src
+│       ├── assets
+│       ├── components
+│       │   ├── characters
+│       │   │   ├── CharacterDirectory.tsx
+│       │   │   └── CharacterEditor.tsx
+│       │   ├── layout
+│       │   │   └── Sidebar.tsx
+│       │   ├── speech
+│       │   │   ├── VoiceBuilderForm.tsx
+│       │   │   └── VoiceDirectory.tsx
+│       │   └── ui
+│       ├── layouts
+│       │   └── AppLayout.tsx
+│       ├── lib
+│       │   └── utils.tsx
+│       ├── pages
+│       │   ├── Agents.tsx
+│       │   ├── Characters.tsx
+│       │   ├── Chats.tsx
+│       │   ├── Home.tsx
+│       │   ├── Models.tsx
+│       │   ├── Settings.tsx
+│       │   └── Speech.tsx
+│       ├── App.tsx
+│       ├── index.css
+│       └── main.tsx
 ├── CLAUDE.md
 ├── AGENTS.md
 ├── requirements_higgs.txt
