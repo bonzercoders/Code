@@ -84,11 +84,10 @@ class ModelSettings:
 
 class PipeQueues:
     """Queue Management for various pipeline stages"""
-
     def __init__(self):
         self.stt_queue = asyncio.Queue()
         self.sentence_queue = asyncio.Queue()
-        self.audio_queue = asyncio.Queue()
+        self.tts_queue = asyncio.Queue()
 
 ########################################
 ##--  Speech to Text Transcription  --##
@@ -604,7 +603,7 @@ class TTS:
 
             # Pass through sentinels
             if sentence.is_final:
-                await self.queues.audio_queue.put(AudioChunk(
+                await self.queues.tts_queue.put(AudioChunk(
                     audio_bytes=b"",
                     sentence_index=sentence.index,
                     chunk_index=0,
@@ -633,7 +632,7 @@ class TTS:
                         is_final=False,
                     )
 
-                    await self.queues.audio_queue.put(audio_chunk)
+                    await self.queues.tts_queue.put(audio_chunk)
                     chunk_index += 1
 
                 logger.info(f"[TTS] {sentence.character_name} #{sentence.index}: {chunk_index} chunks")
@@ -1248,7 +1247,7 @@ class WebSocketManager:
         """Start the voice transcription → LLM → TTS pipeline as background tasks."""
         self._clear_queue(self.queues.stt_queue)
         self._clear_queue(self.queues.sentence_queue)
-        self._clear_queue(self.queues.audio_queue)
+        self._clear_queue(self.queues.tts_queue)
 
         if self.tts and not self.tts.is_running:
             await self.tts.start()
@@ -1291,7 +1290,7 @@ class WebSocketManager:
 
         while True:
             try:
-                chunk: AudioChunk = await asyncio.wait_for(self.queues.audio_queue.get(), timeout=0.1)
+                chunk: AudioChunk = await asyncio.wait_for(self.queues.tts_queue.get(), timeout=0.1)
             except asyncio.TimeoutError:
                 continue
             except asyncio.CancelledError:
