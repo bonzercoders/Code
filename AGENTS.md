@@ -32,31 +32,31 @@ Code
 ├── frontend
 │   └── src
 │       ├── assets
-│       ├── components
-│       │   ├── characters
-│       │   │   ├── CharacterDirectory.tsx
-│       │   │   └── CharacterEditor.tsx
-│       │   ├── layout
-│       │   │   └── Sidebar.tsx
-│       │   ├── speech
-│       │   │   ├── VoiceBuilderForm.tsx
-│       │   │   └── VoiceDirectory.tsx
-│       │   └── ui
-│       ├── layouts
-│       │   └── AppLayout.tsx
-│       ├── lib
-│       │   └── utils.tsx
-│       ├── pages
-│       │   ├── Agents.tsx
-│       │   ├── Characters.tsx
-│       │   ├── Chats.tsx
-│       │   ├── Home.tsx
-│       │   ├── Models.tsx
-│       │   ├── Settings.tsx
-│       │   └── Speech.tsx
-│       ├── App.tsx
-│       ├── index.css
-│       └── main.tsx
+│       └── components
+│           ├── characters
+│           │   ├── CharacterDirectory.tsx
+│           │   └── CharacterEditor.tsx
+│           ├── layout
+│           │   └── Sidebar.tsx
+│           ├── speech
+│           │   ├── VoiceBuilderForm.tsx
+│           │   └── VoiceDirectory.tsx
+│           ├── ui
+│           ├── layouts
+│           │   └── AppLayout.tsx
+│           ├── lib
+│           │   └── utils.tsx
+│           ├── pages
+│           │   ├── Agents.tsx
+│           │   ├── Characters.tsx
+│           │   ├── Chats.tsx
+│           │   ├── Home.tsx
+│           │   ├── Models.tsx
+│           │   ├── Settings.tsx
+│           │   └── Speech.tsx
+│           ├── App.tsx
+│           ├── index.css
+│           └── main.tsx
 ├── CLAUDE.md
 ├── AGENTS.md
 ├── requirements_higgs.txt
