@@ -92,10 +92,6 @@ class WebSocketManager:
     async def shutdown(self):
         await self.disconnect()
 
-    # ──────────────────────────────────────────────
-    #  Pipeline start / stop
-    # ──────────────────────────────────────────────
-
     async def start_pipeline(self):
         """Start conversation pipeline + audio streamer."""
         if self.pipeline:
@@ -115,10 +111,6 @@ class WebSocketManager:
                 await self._audio_streamer_task
             except asyncio.CancelledError:
                 pass
-
-    # ──────────────────────────────────────────────
-    #  Transport: audio to browser
-    # ──────────────────────────────────────────────
 
     async def stream_audio_to_client(self):
         """Background task: deliver audio chunks over WebSocket."""
@@ -176,10 +168,6 @@ class WebSocketManager:
 
             if self.websocket:
                 await self.websocket.send_bytes(chunk.audio_bytes)
-
-    # ──────────────────────────────────────────────
-    #  Event handler
-    # ──────────────────────────────────────────────
 
     async def on_pipeline_event(self, event_type: str, data: dict):
         """Forward pipeline events to WebSocket client."""

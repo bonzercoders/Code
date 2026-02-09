@@ -11,7 +11,6 @@ from backend.services.pipeline_types import ModelSettings
 
 logger = logging.getLogger(__name__)
 
-
 class ChatLLM:
     """LLM helpers: streaming, message building, and routing utilities.
 
@@ -21,15 +20,9 @@ class ChatLLM:
     """
 
     def __init__(self, api_key: str):
-        self.client = AsyncOpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=api_key,
-        )
+        
+        self.client = AsyncOpenAI(base_url="https://openrouter.ai/api/v1",api_key=api_key)
         self.model_settings: Optional[ModelSettings] = None
-
-    # ──────────────────────────────────────────────
-    #  LLM streaming
-    # ──────────────────────────────────────────────
 
     async def create_completion_stream(
         self,
@@ -60,10 +53,6 @@ class ChatLLM:
                 content = chunk.choices[0].delta.content
                 if content:
                     yield content
-
-    # ──────────────────────────────────────────────
-    #  Message building
-    # ──────────────────────────────────────────────
 
     def build_messages_for_character(
         self,
@@ -96,10 +85,6 @@ class ChatLLM:
         """Wrap response text with character name XML tags for conversation history."""
         return f"<{character_name}>{text}</{character_name}>"
 
-    # ──────────────────────────────────────────────
-    #  Routing helper
-    # ──────────────────────────────────────────────
-
     def find_first_mentioned_character(
         self,
         message: str,
@@ -129,10 +114,6 @@ class ChatLLM:
         mentions.sort(key=lambda x: x[0])
         return mentions[0][1]
 
-    # ──────────────────────────────────────────────
-    #  Config
-    # ──────────────────────────────────────────────
-
     def get_model_settings(self) -> ModelSettings:
         """Get current model settings, with sensible defaults."""
         if self.model_settings is None:
@@ -151,10 +132,6 @@ class ChatLLM:
     def set_model_settings(self, model_settings: ModelSettings):
         """Set model settings for LLM requests."""
         self.model_settings = model_settings
-
-    # ──────────────────────────────────────────────
-    #  Debug
-    # ──────────────────────────────────────────────
 
     def save_conversation_context(
         self,

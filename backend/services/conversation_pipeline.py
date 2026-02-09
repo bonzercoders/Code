@@ -14,6 +14,10 @@ from backend.services.tts_service import TTS
 logger = logging.getLogger(__name__)
 
 
+########################################
+##--     Conversation Commando      --##
+########################################
+
 class ConversationPipeline:
     """Orchestrates one conversation session.
 
@@ -22,12 +26,13 @@ class ConversationPipeline:
     """
 
     def __init__(
-        self,
-        chat: ChatLLM,
-        tts: TTS,
-        queues: PipeQueues,
-        on_event: Callable[[str, dict], Awaitable[None]],
-    ):
+            self,
+            chat: ChatLLM,
+            tts: TTS,
+            queues: PipeQueues,
+            on_event: Callable[[str, dict], Awaitable[None]],
+            ):
+        
         self.chat = chat
         self.tts = tts
         self.queues = queues
@@ -42,25 +47,19 @@ class ConversationPipeline:
         self._user_message_task: Optional[asyncio.Task] = None
         self._process_sentences_task: Optional[asyncio.Task] = None
 
-    # ──────────────────────────────────────────────
-    #  Pipeline lifecycle
-    # ──────────────────────────────────────────────
-
     async def start(self):
         """Start pipeline background tasks."""
+
         self._flush_queues()
 
-        self._user_message_task = asyncio.create_task(
-            self.get_user_message()
-        )
-        self._process_sentences_task = asyncio.create_task(
-            self.process_sentences()
-        )
+        self._user_message_task = asyncio.create_task(self.get_user_message())
+        self._process_sentences_task = asyncio.create_task(self.process_sentences())
 
         logger.info("[Pipeline] Background tasks started")
 
     async def stop(self):
         """Cancel pipeline background tasks."""
+
         for task in (self._user_message_task, self._process_sentences_task):
             if task and not task.done():
                 task.cancel()
@@ -71,31 +70,24 @@ class ConversationPipeline:
 
         logger.info("[Pipeline] Background tasks stopped")
 
-    # ──────────────────────────────────────────────
-    #  Conversation lifecycle
-    # ──────────────────────────────────────────────
-
     async def start_conversation(self):
         """Begin a new conversation. Clears history, creates DB record."""
+
         self.conversation_history = []
-        active_char_data = [
-            {"id": c.id, "name": c.name} for c in self.active_characters
-        ]
-        self.conversation_id = await db.create_conversation_background(
-            ConversationCreate(active_characters=active_char_data)
-        )
+        active_char_data = [{"id": c.id, "name": c.name} for c in self.active_characters]
+
+        self.conversation_id = await db.create_conversation_background(ConversationCreate(active_characters=active_char_data))
+
         logger.info(f"[Pipeline] New conversation: {self.conversation_id}")
 
     def clear_conversation(self):
         """Reset conversation history."""
-        self.conversation_history = []
 
-    # ──────────────────────────────────────────────
-    #  Turn orchestration
-    # ──────────────────────────────────────────────
+        self.conversation_history = []
 
     async def get_user_message(self):
         """Background task: pull user messages from stt_queue, start turns."""
+
         while True:
             try:
                 user_message: str = await self.queues.stt_queue.get()
@@ -111,10 +103,8 @@ class ConversationPipeline:
     async def start_turn(self, user_message: str):
         """One full round: user message → character response chain."""
 
-        # Record user message
-        self.conversation_history.append({
-            "role": "user", "name": "Jay", "content": user_message,
-        })
+        self.conversation_history.append({"role": "user", "name": "Jay", "content": user_message})
+
         if self.conversation_id:
             db.create_message_background(MessageCreate(
                 conversation_id=self.conversation_id,
@@ -135,85 +125,57 @@ class ConversationPipeline:
             if character is None:
                 break
 
-            response = await self.generate_character_turn(character)
+            response = await self.generate_character_response(character)
 
             responded_to.add((character.id, last_speaker_id))
             last_message = response.text
             last_speaker_id = character.id
 
     def route_response(
-        self,
-        message: str,
-        speaker_id: str,
-        responded_to: Set[Tuple[str, str]],
-    ) -> Optional[Character]:
+            self,
+            message: str,
+            speaker_id: str,
+            responded_to: Set[Tuple[str, str]],
+            ) -> Optional[Character]:
         """Determine the next responding character, or None to end the chain."""
 
-        # Skip self-mentions: exclude the current speaker from candidates
         exclude_id = None if speaker_id == "user" else speaker_id
 
-        character = self.chat.find_first_mentioned_character(
-            message, self.active_characters, exclude_id
-        )
+        character = self.chat.find_first_mentioned_character(message, self.active_characters, exclude_id)
 
-        # No mention found
         if character is None:
-            # Fallback for user messages: first active character responds
             if speaker_id == "user" and self.active_characters:
                 return sorted(self.active_characters, key=lambda c: c.name)[0]
             return None
 
-        # Runaway prevention: each character responds to another only once per turn
         if speaker_id != "user":
             if (character.id, speaker_id) in responded_to:
                 return None
 
         return character
 
-    # ──────────────────────────────────────────────
-    #  Single character response
-    # ──────────────────────────────────────────────
-
-    async def generate_character_turn(
-        self, character: Character,
-    ) -> CharacterResponse:
+    async def generate_character_response(self, character: Character) -> CharacterResponse:
         """Generate one character's full response within the current turn."""
 
         message_id = str(uuid.uuid4())
 
-        await self.emit("text_stream_start",
-            character_id=character.id,
-            character_name=character.name,
-            message_id=message_id,
-        )
+        await self.emit("text_stream_start",character_id=character.id,character_name=character.name,message_id=message_id)
 
-        full_response = await self.stream_response(character, message_id)
+        response = await self.stream_response(character, message_id)
 
-        await self.emit("text_stream_stop",
-            character_id=character.id,
-            character_name=character.name,
-            message_id=message_id,
-            text=full_response,
-        )
+        await self.emit("text_stream_stop",character_id=character.id,character_name=character.name,message_id=message_id,text=response)
 
-        # Update conversation history
-        if full_response:
-            wrapped = self.chat.wrap_character_tags(
-                full_response, character.name
-            )
-            self.conversation_history.append({
-                "role": "assistant",
-                "name": character.name,
-                "content": wrapped,
-            })
+        if response:
+            wrapped = self.chat.wrap_character_tags(response, character.name)
 
-            # Persist to database
+            self.conversation_history.append({"role": "assistant","name": character.name,"content": wrapped})
+
             if self.conversation_id:
                 db.create_message_background(MessageCreate(
                     conversation_id=self.conversation_id,
                     role="assistant",
                     name=character.name,
-                    content=full_response,
+                    content=response,
                     character_id=character.id,
                 ))
 
@@ -223,37 +185,29 @@ class ConversationPipeline:
             character_id=character.id,
             character_name=character.name,
             voice_id=character.voice,
-            text=full_response,
+            text=response,
         )
 
-    # ──────────────────────────────────────────────
-    #  LLM streaming + sentence extraction
-    # ──────────────────────────────────────────────
+    async def stream_response(self, character: Character, message_id: str) -> str:
+        """Stream LLM text, emit chunk events, extract sentences, queue for TTS. Returns the full accumulated response text."""
 
-    async def stream_response(
-        self, character: Character, message_id: str,
-    ) -> str:
-        """Stream LLM text, emit chunk events, extract sentences, queue for TTS.
+        messages = self.chat.build_messages_for_character(character, self.conversation_history)
 
-        Returns the full accumulated response text.
-        """
-        messages = self.chat.build_messages_for_character(
-            character, self.conversation_history
-        )
         model_settings = self.chat.get_model_settings()
+
         self.chat.save_conversation_context(messages, character, model_settings)
 
-        full_response = ""
+        response = ""
         sentence_index = 0
 
         try:
-            async def text_with_events():
+            async def chunk_generator():
                 """Wrap LLM stream: accumulate text and emit chunk events."""
-                nonlocal full_response
+                nonlocal response
                 async for text in self.chat.create_completion_stream(
                     messages, model_settings
                 ):
-                    full_response += text
+                    response += text
                     await self.emit("text_chunk",
                         text=text,
                         character_id=character.id,
@@ -263,7 +217,7 @@ class ConversationPipeline:
                     yield text
 
             async for sentence in generate_sentences_async(
-                text_with_events(),
+                chunk_generator(),
                 minimum_first_fragment_length=4,
                 minimum_sentence_length=25,
                 tokenizer="nltk",
@@ -281,44 +235,33 @@ class ConversationPipeline:
                         character_name=character.name,
                         voice_id=character.voice,
                     ))
-                    logger.info(
-                        f"[LLM] {character.name} sentence {sentence_index}: "
-                        f"{text[:50]}..."
-                    )
+                    logger.info(f"[LLM] {character.name} sentence {sentence_index}: {text[:50]}...")
                     sentence_index += 1
 
         except Exception as e:
             logger.error(f"[LLM] Error streaming for {character.name}: {e}")
 
-        # Signal: this character's sentences are done
         await self.queues.sentence_queue.put(None)
         logger.info(f"[LLM] {character.name} complete: {sentence_index} sentences")
 
-        return full_response
-
-    # ──────────────────────────────────────────────
-    #  TTS sentence processing
-    # ──────────────────────────────────────────────
+        return response
 
     async def process_sentences(self):
         """Background task: pull sentences from queue, synthesize audio, queue chunks."""
         while True:
             try:
-                sentence: TTSSentence = await asyncio.wait_for(
-                    self.queues.sentence_queue.get(), timeout=0.1
-                )
+                sentence: TTSSentence = await asyncio.wait_for(self.queues.sentence_queue.get(), timeout=0.1)
+
             except asyncio.TimeoutError:
                 continue
             except asyncio.CancelledError:
                 break
 
-            # End-of-response signal: forward to audio queue
             if sentence is None:
                 await self.queues.tts_queue.put(None)
                 logger.info("[TTS] End sentinel passed through")
                 continue
 
-            # Generate audio chunks for this sentence
             logger.info(f"[TTS] Generating audio for sentence {sentence.index}")
             chunk_index = 0
 
@@ -337,23 +280,13 @@ class ConversationPipeline:
                     chunk_index += 1
 
                 logger.info(
-                    f"[TTS] {sentence.character_name} #{sentence.index}: "
-                    f"{chunk_index} chunks"
-                )
+                    f"[TTS] {sentence.character_name} #{sentence.index}: {chunk_index} chunks")
             except Exception as e:
                 logger.error(f"[TTS] Error generating audio: {e}")
-
-    # ──────────────────────────────────────────────
-    #  Events
-    # ──────────────────────────────────────────────
 
     async def emit(self, event_type: str, **data):
         """Emit a pipeline event to the transport layer."""
         await self._on_event(event_type, data)
-
-    # ──────────────────────────────────────────────
-    #  Utility
-    # ──────────────────────────────────────────────
 
     def _flush_queues(self):
         """Drain all pipeline queues."""

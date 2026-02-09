@@ -34,7 +34,7 @@ class TTS:
 
     def __init__(self):
         self.engine: Optional[HiggsAudioServeEngine] = None
-        self.sample_rate = 2400
+        self.sample_rate = 24000
         self._chunk_size = 14
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
         self.voice_dir = "/workspace/tts/Code/backend/voices"
