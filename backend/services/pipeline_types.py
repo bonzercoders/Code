@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Optional
 from collections.abc import Awaitable
 
@@ -7,25 +7,33 @@ Callback = Callable[..., Optional[Awaitable[None]]]
 
 @dataclass
 class TTSSentence:
-    """Sentence queued for TTS synthesis"""
+    """Sentence queued for TTS synthesis. Use None sentinel to signal end-of-response."""
     text: str
     index: int
     message_id: str
     character_id: str
     character_name: str
     voice_id: str
-    is_final: bool = False
 
 @dataclass
 class AudioChunk:
-    """PCM audio chunk ready for streaming"""
+    """PCM audio chunk ready for streaming. Use None sentinel to signal end-of-response."""
     audio_bytes: bytes
     sentence_index: int
     chunk_index: int
     message_id: str
     character_id: str
     character_name: str
-    is_final: bool = False
+
+@dataclass
+class CharacterResponse:
+    """Result of one character's response within a turn."""
+    message_id: str
+    conversation_id: str
+    character_id: str
+    character_name: str
+    voice_id: str
+    text: str = ""
 
 @dataclass
 class ModelSettings:
