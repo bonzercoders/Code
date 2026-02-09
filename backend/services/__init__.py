@@ -1,11 +1,12 @@
 from backend.services.pipeline_types import (
-    TTSSentence, AudioChunk, ModelSettings, PipeQueues, Callback,
+    TTSSentence, AudioChunk, CharacterResponse, ModelSettings, PipeQueues, Callback,
 )
 from backend.services.stt_service import STT
 from backend.services.chat_service import ChatLLM
 from backend.services.tts_service import TTS
+from backend.services.conversation_pipeline import ConversationPipeline
 
 __all__ = [
-    "TTSSentence", "AudioChunk", "ModelSettings", "PipeQueues", "Callback",
-    "STT", "ChatLLM", "TTS",
+    "TTSSentence", "AudioChunk", "CharacterResponse", "ModelSettings", "PipeQueues", "Callback",
+    "STT", "ChatLLM", "TTS", "ConversationPipeline",
 ]
