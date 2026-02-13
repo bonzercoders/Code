@@ -25,44 +25,38 @@ Single-user application. Do not over-engineer for enterprise scale or multi-tena
 
 Code
 ├── backend
-│   ├── boson_multimodal
+│   ├── bosun_multimodal
 │   ├── RealtimeSTT
-│   ├── services
-│   │   ├── __init__.py
-│   │   ├── pipeline_types.py
-│   │   ├── stt_service.py
-│   │   ├── chat_service.py
-│   │   └── tts_service.py
 │   ├── fastserver.py
 │   └── stream2sentence.py
 ├── frontend
-|   └── src
-|       ├── assets
-|       ├── components
-|       │   ├── characters
-|       │   │   ├── CharacterDirectory.tsx
-|       │   │   └── CharacterEditor.tsx
-|       │   ├── layout
-|       │   │   └── Sidebar.tsx
-|       │   ├── speech
-|       │   │   ├── VoiceBuilderForm.tsx
-|       │   │   └── VoiceDirectory.tsx
-|       │   └── ui
-|       ├── layouts
-|       │   └── AppLayout.tsx
-|       ├── lib
-|       │   └── utils.tsx
-|       ├── pages
-|       │   ├── Agents.tsx
-|       │   ├── Characters.tsx
-|       │   ├── Chats.tsx
-|       │   ├── Home.tsx
-|       │   ├── Models.tsx
-|       │   ├── Settings.tsx
-|       │   └── Speech.tsx
-|       ├── App.tsx
-|       ├── index.css
-|       └── main.tsx
+│   └── src
+│       ├── assets
+│       └── components
+│           ├── characters
+│           │   ├── CharacterDirectory.tsx
+│           │   └── CharacterEditor.tsx
+│           ├── layout
+│           │   └── Sidebar.tsx
+│           ├── speech
+│           │   ├── VoiceBuilderForm.tsx
+│           │   └── VoiceDirectory.tsx
+│           ├── ui
+│           ├── layouts
+│           │   └── AppLayout.tsx
+│           ├── lib
+│           │   └── utils.tsx
+│           ├── pages
+│           │   ├── Agents.tsx
+│           │   ├── Characters.tsx
+│           │   ├── Chats.tsx
+│           │   ├── Home.tsx
+│           │   ├── Models.tsx
+│           │   ├── Settings.tsx
+│           │   └── Speech.tsx
+│           ├── App.tsx
+│           ├── index.css
+│           └── main.tsx
 ├── CLAUDE.md
 ├── AGENTS.md
 ├── requirements_higgs.txt
