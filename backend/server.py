@@ -717,7 +717,7 @@ class WebSocketManager:
 
     async def initialize(self):
         """Initialize all pipeline components at startup."""
-        api_key = os.getenv("OPENROUTER_API_KEY", "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")
+        api_key = os.getenv("OPENROUTER_API_KEY", "")
 
         self.stt = STT(on_transcription_update=self.on_transcription_update,
                        on_transcription_stabilized=self.on_transcription_stabilized,
