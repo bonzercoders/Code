@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import re
 import sys
@@ -28,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Optional, Dict, List, Union, Any, AsyncIterator, AsyncGenerator, Awaitable
+from typing import Callable, Optional, Dict, List, Union, Any, AsyncIterator, AsyncGenerator, Awaitable, Set, Tuple
 from backend.RealtimeSTT import AudioToTextRecorder
 from backend.stream2sentence import generate_sentences_async
 from backend.boson_multimodal.serve.serve_engine import HiggsAudioServeEngine
@@ -90,6 +91,44 @@ class ModelSettings:
     frequency_penalty: float
     presence_penalty: float
     repetition_penalty: float
+
+@dataclass
+class Generation:
+    turn_id: str
+    last_message: str
+    last_responder_id: Optional[str]  # character.id or None for user
+    is_user_turn: bool
+    responded_pairs: Set[Tuple[str, str]] = field(default_factory=set)
+    # (responder_id, triggerer_id) — who has already responded to whom
+
+    @staticmethod
+    def from_user(message: str) -> Generation:
+        return Generation(
+            turn_id=str(uuid.uuid4()),
+            last_message=message,
+            last_responder_id=None,
+            is_user_turn=True,
+        )
+
+    def after_character(self, message: str, character_id: str) -> Generation:
+        """New Generation snapshot after a character responds."""
+        new_pairs = set(self.responded_pairs)
+        if self.last_responder_id is not None:
+            new_pairs.add((character_id, self.last_responder_id))
+
+        return Generation(
+            turn_id=self.turn_id,
+            last_message=message,
+            last_responder_id=character_id,
+            is_user_turn=False,
+            responded_pairs=new_pairs,
+        )
+
+    def can_respond_to_last(self, character_id: str) -> bool:
+        """Has this character already responded to whoever spoke last this turn?"""
+        if self.last_responder_id is None:
+            return True  # anyone can respond to the user
+        return (character_id, self.last_responder_id) not in self.responded_pairs
 
 ########################################
 ##--        Queue Management        --##
@@ -216,7 +255,9 @@ class STT:
 
 class ChatLLM:
 
-    def __init__(self, queues: PipeQueues, api_key: str):
+    def __init__(self, queues: PipeQueues, api_key: str,on_text_stream_start: Optional[Callable[["Character", str], Awaitable[None]]] = None,
+                 on_text_stream_stop: Optional[Callable[["Character", str, str], Awaitable[None]]] = None,
+                 on_text_chunk: Optional[Callable[[str, "Character", str], Awaitable[None]]] = None):
 
         self.conversation_history: List[Dict] = []
         self.conversation_id: Optional[str] = None
@@ -225,6 +266,10 @@ class ChatLLM:
         self.model_settings: Optional[ModelSettings] = None
         self.active_characters: List[Character] = []
         self.user_name: str = "Jay"
+
+        self.on_text_stream_start = on_text_stream_start
+        self.on_text_stream_stop = on_text_stream_stop
+        self.on_text_chunk = on_text_chunk
 
     async def initialize(self):
         """Load active characters from database on startup."""
@@ -271,73 +316,144 @@ class ChatLLM:
             'content': f'Based on the conversation history above provide the next reply as {character.name}. Your response should include only {character.name}\'s reply. Do not respond for/as anyone else.'
         }
 
-    def parse_character_mentions(self, message: str, active_characters: List[Character]) -> List[Character]:
-        """Parse a message for character mentions in order of appearance. Pure computation."""
+    def save_conversation_context(self, messages: List[Dict[str, str]], character: Character, model_settings: ModelSettings) -> str:
+        """Save the full conversation context to a JSON file for debugging.
 
-        mentioned_characters = []
-        processed_characters = set()
-        name_mentions = []
+        Returns the filepath of the saved file.
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        filename = f"conversation_context_{timestamp}.json"
+        filepath = os.path.join("backend", filename)
 
-        for character in active_characters:
-            name_parts = character.name.lower().split()
+        # Build the full request payload for inspection
+        context_data = {
+            "timestamp": datetime.now().isoformat(),
+            "character": {
+                "id": character.id,
+                "name": character.name,
+            },
+            "model_settings": {
+                "model": model_settings.model,
+                "temperature": model_settings.temperature,
+                "top_p": model_settings.top_p,
+                "min_p": model_settings.min_p,
+                "top_k": model_settings.top_k,
+                "frequency_penalty": model_settings.frequency_penalty,
+                "presence_penalty": model_settings.presence_penalty,
+                "repetition_penalty": model_settings.repetition_penalty,
+            },
+            "messages": [
+                {
+                    "role": msg.get("role", ""),
+                    "name": msg.get("name", ""),
+                    "content": msg.get("content", "")
+                }
+                for msg in messages
+            ],
+            "message_count": len(messages),
+            "conversation_history_count": len(self.conversation_history),
+        }
 
-            for name_part in name_parts:
-                pattern = r'\b' + re.escape(name_part) + r'\b'
-                for match in re.finditer(pattern, message, re.IGNORECASE):
-                    name_mentions.append({
-                        'character': character,
-                        'position': match.start(),
-                        'name_part': name_part
-                    })
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(context_data, f, indent=2, ensure_ascii=False)
 
-        name_mentions.sort(key=lambda x: x['position'])
+        logger.info(f"[DEBUG] Saved conversation context to: {filepath}")
+        return filepath
 
-        for mention in name_mentions:
-            if mention['character'].id not in processed_characters:
-                mentioned_characters.append(mention['character'])
-                processed_characters.add(mention['character'].id)
-
-        if not mentioned_characters:
-            mentioned_characters = sorted(active_characters, key=lambda c: c.name)
-
-        return mentioned_characters
-
-    async def get_user_message(self):
-        """Long-running consumer: pull transcribed text from stt_queue, orchestrate character responses."""
-
+    async def get_user_message(self) -> None:
+        """Background task: pull user messages from stt_queue and process."""
         while True:
             try:
                 user_message: str = await self.queues.stt_queue.get()
-
-                if not user_message or not user_message.strip():
-                    continue
-
-                # Determine which characters respond (and in what order)
-                responding_characters = self.parse_character_mentions(
-                    user_message, self.active_characters
-                )
-
-                if not responding_characters:
-                    logger.warning("[LLM] No active characters to respond")
-                    continue
-
-                # Append user message to history once
-                self.conversation_history.append({
-                    "role": "user",
-                    "name": self.user_name,
-                    "content": user_message
-                })
-
-                # Generate each character's response sequentially
-                for character in responding_characters:
-                    await self.generate_character_response(
-                        user_message=user_message,
-                        character=character,
-                        on_text_chunk=ws_manager.on_text_chunk,
-                    )
-
+                if user_message and user_message.strip():
+                    await self.user_turn(user_message)
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 logger.error(f"Error processing user message: {e}")
+
+    async def user_turn(self, user_message: str) -> None:
+        """Entry point for a new user message. Runs the generation loop
+        until no next character is resolved."""
+
+        generation = Generation.from_user(user_message)
+
+        # append user message exactly once
+        self.conversation_history.append({
+            "role": "user",
+            "name": "Jay",
+            "content": user_message,
+        })
+
+        while True:
+            character = self.resolve_next_character(generation)
+            if character is None:
+                break
+
+            response = await self.generate_character_response(
+                character=character,
+                on_text_stream_start=self.on_text_stream_start,
+                on_text_stream_stop=self.on_text_stream_stop,
+            )
+
+            if not response:
+                break
+
+            generation = generation.after_character(response, character.id)
+
+    def parse_next_character(
+        self,
+        text: str,
+        active_characters: List[Character],
+        exclude_id: Optional[str] = None,
+    ) -> Optional[Character]:
+        """Find the first active character mentioned in text.
+
+        Matches full name, first name, or last name using word boundaries.
+        Skips the character who just spoke (exclude_id).
+        """
+        text_lower = text.lower()
+
+        for character in active_characters:
+            if exclude_id and character.id == exclude_id:
+                continue
+
+            name_parts = character.name.lower().split()
+
+            # check full name first, then individual parts
+            patterns = [re.escape(character.name.lower())]
+            patterns.extend(re.escape(part) for part in name_parts)
+
+            for pattern in patterns:
+                if re.search(rf"\b{pattern}\b", text_lower):
+                    return character
+
+        return None
+
+    def resolve_next_character(self, generation: Generation) -> Optional[Character]:
+        """Decide who speaks next.
+
+        1. Parse last message for a character mention.
+        2. Check loop deterrent — has this pair already fired this turn?
+        3. User turn with no mention → default to first character.
+        4. Character turn with no mention → cycle ends.
+        """
+        mentioned = self.parse_next_character(
+            text=generation.last_message,
+            active_characters=self.active_characters,
+            exclude_id=generation.last_responder_id,
+        )
+
+        if mentioned:
+            if generation.can_respond_to_last(mentioned.id):
+                return mentioned
+            return None  # blocked by loop deterrent
+
+        # user spoke but didn't mention anyone — default character
+        if generation.is_user_turn and self.active_characters:
+            return self.active_characters[0]
+
+        return None
 
     def build_character_messages(self, character: Character) -> List[Dict[str, str]]:
         """Build the full message list for an OpenRouter request. Pure computation."""
@@ -357,43 +473,31 @@ class ChatLLM:
         return messages
 
     async def generate_character_response(self,
-                                          user_message: str,
                                           character: Character,
-                                          on_text_chunk: Optional[Callable[[str, Character, str], Awaitable[None]]] = None,
-                                          ):
-        """Generate a single character's response and push sentences to the TTS queue."""
+                                          on_text_stream_start: Optional[Callable[[Character, str], Awaitable[None]]] = None,
+                                          on_text_stream_stop: Optional[Callable[[Character, str, str], Awaitable[None]]] = None) -> Optional[str]:
 
-        message_id = str(uuid.uuid4())
         model_settings = self.get_model_settings()
+        message_id = str(uuid.uuid4())
         messages = self.build_character_messages(character)
 
-        # Notify client that text streaming is starting for this character
-        await ws_manager.on_text_stream_start(character, message_id)
+        if self.on_text_stream_start:
+            await self.on_text_stream_start(character, message_id)
 
-        response = await self.stream_character_response(
-            messages=messages,
-            character=character,
-            message_id=message_id,
-            model_settings=model_settings,
-            on_text_chunk=on_text_chunk,
-        )
+        response = await self.stream_character_response(messages=messages,
+                                                        character=character,
+                                                        message_id=message_id,
+                                                        model_settings=model_settings,
+                                                        on_text_chunk=self.on_text_chunk)
 
-        # Notify client that text streaming is done for this character
-        await ws_manager.on_text_stream_stop(character, message_id, response)
+        if self.on_text_stream_stop:
+            await self.on_text_stream_stop(character, message_id, response)
 
         if response:
-            self.conversation_history.append({
-                "role": "assistant",
-                "name": character.name,
-                "content": response
-            })
+            self.conversation_history.append({"role": "assistant","name": character.name,"content": response})
+            return response
 
-        # Signal end-of-character to TTS worker (typed sentinel, not bare None)
-        await self.queues.sentence_queue.put(EndOfCharacterResponse(
-            message_id=message_id,
-            character_id=character.id,
-            character_name=character.name,
-        ))
+        return None
 
     async def stream_character_response(self,
                                         messages: List[Dict[str, str]],
@@ -405,6 +509,8 @@ class ChatLLM:
 
         sentence_index = 0
         response = ""
+
+        self.save_conversation_context(messages, character, model_settings)
 
         try:
             stream = await self.client.chat.completions.create(
@@ -707,6 +813,7 @@ class WebSocketManager:
         self.stt: Optional[STT] = None
         self.chat: Optional[ChatLLM] = None
         self.tts: Optional[TTS] = None
+        self.conversation: Optional[Conversation] = None
 
         self._task_user_message: Optional[asyncio.Task] = None
         self._task_tts_worker: Optional[asyncio.Task] = None
@@ -717,7 +824,7 @@ class WebSocketManager:
 
     async def initialize(self):
         """Initialize all pipeline components at startup."""
-        api_key = os.getenv("OPENROUTER_API_KEY", "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")
+        api_key = os.getenv("OPENROUTER_API_KEY", "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")
 
         self.stt = STT(on_transcription_update=self.on_transcription_update,
                        on_transcription_stabilized=self.on_transcription_stabilized,
@@ -725,7 +832,13 @@ class WebSocketManager:
 
         self.stt.set_event_loop(asyncio.get_event_loop())
 
-        self.chat = ChatLLM(queues=self.queues, api_key=api_key)
+        self.chat = ChatLLM(
+            queues=self.queues,
+            api_key=api_key,
+            on_text_stream_start=self.on_text_stream_start,
+            on_text_stream_stop=self.on_text_stream_stop,
+            on_text_chunk=self.on_text_chunk,
+        )
         await self.chat.initialize()
 
         self.tts = TTS(queues=self.queues)
