@@ -624,7 +624,6 @@ class TTS:
         with open(text_path, 'r', encoding='utf-8') as f:
             ref_text = f.read().strip()
 
-        # Build messages with reference audio (few-shot approach)
         messages = [
             Message(role="user", content=ref_text),
             Message(role="assistant", content=AudioContent(audio_url=audio_path))
@@ -643,7 +642,6 @@ class TTS:
             except asyncio.CancelledError:
                 break
 
-            # Typed sentinel — forward to tts_queue so stream_audio knows this character is done
             if isinstance(item, EndOfCharacterResponse):
                 await self.queues.tts_queue.put(item)
                 logger.info(f"[TTS] End of response for {item.character_name}")
@@ -757,8 +755,6 @@ class TTS:
     async def load_voice_reference(self, voice: str):
         """Load reference audio and text for voice cloning from database Voice record."""
 
-        #voice = await db.get_voice(voice)
-
         audio_path = os.path.join(self.voice_dir, f"{voice}.wav")
         text_path = os.path.join(self.voice_dir, f"{voice}.txt")
 
@@ -790,7 +786,6 @@ class TTS:
                         "name": display_name
                     })
 
-        # Sort by display name
         voices.sort(key=lambda v: v['name'])
         return voices
 
