@@ -7,9 +7,10 @@ using Supabase as the backend.
 import os
 import re
 import json
+import asyncio
 import logging
 import threading
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Callable
 from datetime import datetime
 from pydantic import BaseModel
 from supabase import create_client, Client
@@ -66,34 +67,36 @@ class CharacterUpdate(BaseModel):
 
 # Voice Models
 class Voice(BaseModel):
-    voice: str  # Primary key
+    voice_id: str           # Primary key
+    voice: str              # Display name (human-readable)
     method: str = ""
-    audio_path: str = ""
-    text_path: str = ""
+    ref_audio: str = ""
+    transcript: str = ""
     speaker_desc: str = ""
     scene_prompt: str = ""
-    audio_tokens: Optional[Any] = None
-    id: Optional[str] = None
+    audio_ids: Optional[Any] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
 
 class VoiceCreate(BaseModel):
+    voice_id: str
     voice: str
     method: str = ""
-    audio_path: str = ""
-    text_path: str = ""
+    ref_audio: str = ""
+    transcript: str = ""
     speaker_desc: str = ""
     scene_prompt: str = ""
 
 
 class VoiceUpdate(BaseModel):
+    voice: Optional[str] = None
     method: Optional[str] = None
-    audio_path: Optional[str] = None
-    text_path: Optional[str] = None
+    ref_audio: Optional[str] = None
+    transcript: Optional[str] = None
     speaker_desc: Optional[str] = None
     scene_prompt: Optional[str] = None
-    audio_tokens: Optional[Any] = None
+    audio_ids: Optional[Any] = None
 
 
 # Conversation Models
@@ -156,6 +159,14 @@ class DatabaseDirector:
         self._voice_cache: Dict[str, Dict[str, Any]] = {}
         self._cache_lock = threading.Lock()
 
+        # Broadcast channels
+        self._character_channel = None
+        self._voice_channel = None
+
+        # Callbacks for broadcast events
+        self.on_characters_changed: Optional[Callable] = None
+        self.on_voices_changed: Optional[Callable] = None
+
     async def init_database(self):
         """Validate database connection on startup. Supabase client is already created in __init__."""
         try:
@@ -165,6 +176,38 @@ class DatabaseDirector:
         except Exception as e:
             logger.error(f"Database connection check failed: {e}")
             raise
+
+    async def subscribe_to_broadcasts(self):
+        """
+        Subscribe to Realtime Broadcast channels for character and voice changes.
+        Frontend broadcasts when it creates/updates/deletes characters or voices.
+        """
+        # Character changes channel
+        self._character_channel = self.supabase.channel('db-characters')
+        await self._character_channel.on_broadcast(
+            'character-changed', self._on_character_changed
+        ).subscribe()
+        logger.info("Subscribed to db-characters broadcast channel")
+
+        # Voice changes channel
+        self._voice_channel = self.supabase.channel('db-voices')
+        await self._voice_channel.on_broadcast(
+            'voice-changed', self._on_voice_changed
+        ).subscribe()
+        logger.info("Subscribed to db-voices broadcast channel")
+
+    def _on_character_changed(self, payload):
+        """Callback: frontend changed a character."""
+        logger.info(f"Broadcast received: character-changed {payload}")
+        if self.on_characters_changed:
+            asyncio.create_task(self.on_characters_changed())
+
+    def _on_voice_changed(self, payload):
+        """Callback: frontend changed a voice. Clear the cache."""
+        logger.info(f"Broadcast received: voice-changed {payload}")
+        self.clear_voice_cache()
+        if self.on_voices_changed:
+            asyncio.create_task(self.on_voices_changed())
 
     ########################################
     ##--      Character Operations      --##
@@ -432,6 +475,21 @@ class DatabaseDirector:
     ##--        Voice Operations        --##
     ########################################
 
+    def _parse_voice_row(self, row: Dict[str, Any]) -> Voice:
+        """Helper to parse a database row into a Voice model."""
+        return Voice(
+            voice_id=row["voice_id"],
+            voice=row["voice"],
+            method=row.get("method") or "",
+            ref_audio=row.get("ref_audio") or "",
+            transcript=row.get("transcript") or "",
+            speaker_desc=row.get("speaker_desc") or "",
+            scene_prompt=row.get("scene_prompt") or "",
+            audio_ids=row.get("audio_ids"),
+            created_at=row.get("created_at"),
+            updated_at=row.get("updated_at")
+        )
+
     async def get_all_voices(self) -> List[Voice]:
         """Get all voices from database."""
         try:
@@ -439,21 +497,7 @@ class DatabaseDirector:
                 .select("*")\
                 .execute()
 
-            voices = []
-            for row in response.data:
-                voice_data = {
-                    "voice": row["voice"],
-                    "method": row.get("method") or "",
-                    "audio_path": row.get("audio_path") or "",
-                    "text_path": row.get("text_path") or "",
-                    "speaker_desc": row.get("speaker_desc") or "",
-                    "scene_prompt": row.get("scene_prompt") or "",
-                    "audio_tokens": row.get("audio_tokens"),
-                    "id": row.get("id"),
-                    "created_at": row.get("created_at"),
-                    "updated_at": row.get("updated_at")
-                }
-                voices.append(Voice(**voice_data))
+            voices = [self._parse_voice_row(row) for row in response.data]
 
             logger.info(f"Retrieved {len(voices)} voices from database")
             return voices
@@ -462,63 +506,51 @@ class DatabaseDirector:
             logger.error(f"Error getting all voices: {e}")
             raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-    async def get_voice(self, voice_name: str) -> Voice:
-        """Get a specific voice by name."""
+    async def get_voice(self, voice_id: str) -> Voice:
+        """Get a specific voice by voice_id (PK)."""
         # Check cache first
         with self._cache_lock:
-            if voice_name in self._voice_cache:
-                logger.debug(f"Retrieved voice {voice_name} from cache")
-                return self._voice_cache[voice_name]["config"]
+            if voice_id in self._voice_cache:
+                logger.debug(f"Retrieved voice {voice_id} from cache")
+                return self._voice_cache[voice_id]["config"]
 
         try:
             response = self.supabase.table("voices")\
                 .select("*")\
-                .eq("voice", voice_name)\
+                .eq("voice_id", voice_id)\
                 .execute()
 
             if not response.data:
                 raise HTTPException(status_code=404, detail="Voice not found")
 
             row = response.data[0]
-            voice_data = {
-                "voice": row["voice"],
-                "method": row.get("method") or "",
-                "audio_path": row.get("audio_path") or "",
-                "text_path": row.get("text_path") or "",
-                "speaker_desc": row.get("speaker_desc") or "",
-                "scene_prompt": row.get("scene_prompt") or "",
-                "audio_tokens": row.get("audio_tokens"),
-                "id": row.get("id"),
-                "created_at": row.get("created_at"),
-                "updated_at": row.get("updated_at")
-            }
-
-            voice = Voice(**voice_data)
+            voice = self._parse_voice_row(row)
 
             # Add to cache
             with self._cache_lock:
-                self._voice_cache[voice_name] = {
+                self._voice_cache[voice_id] = {
                     "config": voice,
-                    "audio_tokens": voice.audio_tokens
+                    "audio_ids": voice.audio_ids
                 }
 
-            logger.info(f"Retrieved voice {voice_name} from database")
+            logger.info(f"Retrieved voice {voice_id} from database")
             return voice
 
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error getting voice {voice_name}: {e}")
+            logger.error(f"Error getting voice {voice_id}: {e}")
             raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
     async def create_voice(self, voice_data: VoiceCreate) -> Voice:
         """Create a new voice."""
         try:
             db_data = {
+                "voice_id": voice_data.voice_id,
                 "voice": voice_data.voice,
                 "method": voice_data.method,
-                "audio_path": voice_data.audio_path,
-                "text_path": voice_data.text_path,
+                "ref_audio": voice_data.ref_audio,
+                "transcript": voice_data.transcript,
                 "speaker_desc": voice_data.speaker_desc,
                 "scene_prompt": voice_data.scene_prompt
             }
@@ -530,7 +562,7 @@ class DatabaseDirector:
             if not response.data:
                 raise HTTPException(status_code=500, detail="Failed to create voice")
 
-            voice = await self.get_voice(voice_data.voice)
+            voice = await self.get_voice(voice_data.voice_id)
 
             # Add to cache
             with self._cache_lock:
@@ -548,68 +580,70 @@ class DatabaseDirector:
             logger.error(f"Error creating voice: {e}")
             raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-    async def update_voice(self, voice_name: str, voice_data: VoiceUpdate) -> Voice:
+    async def update_voice(self, voice_id: str, voice_data: VoiceUpdate) -> Voice:
         """Update an existing voice."""
         try:
             update_data = {}
+            if voice_data.voice is not None:
+                update_data["voice"] = voice_data.voice
             if voice_data.method is not None:
                 update_data["method"] = voice_data.method
-            if voice_data.audio_path is not None:
-                update_data["audio_path"] = voice_data.audio_path
-            if voice_data.text_path is not None:
-                update_data["text_path"] = voice_data.text_path
+            if voice_data.ref_audio is not None:
+                update_data["ref_audio"] = voice_data.ref_audio
+            if voice_data.transcript is not None:
+                update_data["transcript"] = voice_data.transcript
             if voice_data.speaker_desc is not None:
                 update_data["speaker_desc"] = voice_data.speaker_desc
             if voice_data.scene_prompt is not None:
                 update_data["scene_prompt"] = voice_data.scene_prompt
-            if voice_data.audio_tokens is not None:
-                update_data["audio_tokens"] = voice_data.audio_tokens
+            if voice_data.audio_ids is not None:
+                update_data["audio_ids"] = voice_data.audio_ids
 
             if not update_data:
                 raise HTTPException(status_code=400, detail="No fields to update")
 
             response = self.supabase.table("voices")\
                 .update(update_data)\
-                .eq("voice", voice_name)\
+                .eq("voice_id", voice_id)\
                 .execute()
 
             if not response.data:
                 raise HTTPException(status_code=404, detail="Voice not found")
 
-            voice = await self.get_voice(voice_name)
+            voice = await self.get_voice(voice_id)
 
             # Update cache
             with self._cache_lock:
-                if voice_name in self._voice_cache:
-                    self._voice_cache[voice_name]["config"] = voice
-                    if voice_data.audio_tokens is not None:
-                        self._voice_cache[voice_name]["audio_tokens"] = voice_data.audio_tokens
+                if voice_id in self._voice_cache:
+                    self._voice_cache[voice_id]["config"] = voice
+                    if voice_data.audio_ids is not None:
+                        self._voice_cache[voice_id]["audio_ids"] = voice_data.audio_ids
 
-            logger.info(f"Updated voice: {voice_name}")
+            logger.info(f"Updated voice: {voice_id}")
             return voice
 
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error updating voice {voice_name}: {e}")
+            logger.error(f"Error updating voice {voice_id}: {e}")
             raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-    async def delete_voice(self, voice_name: str) -> bool:
+    async def delete_voice(self, voice_id: str) -> bool:
         """Delete a voice."""
         try:
-            await self.get_voice(voice_name)
+            await self.get_voice(voice_id)
 
             self.supabase.table("voices")\
                 .delete()\
-                .eq("voice", voice_name)\
+                .eq("voice_id", voice_id)\
                 .execute()
 
             # Remove from cache
             with self._cache_lock:
-                if voice_name in self._voice_cache:
-                    del self._voice_cache[voice_name]
+                if voice_id in self._voice_cache:
+                    del self._voice_cache[voice_id]
 
-            logger.info(f"Deleted voice: {voice_name}")
+            logger.info(f"Deleted voice: {voice_id}")
             return True
 
         except HTTPException as e:
@@ -617,21 +651,21 @@ class DatabaseDirector:
                 raise
             raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
         except Exception as e:
-            logger.error(f"Error deleting voice {voice_name}: {e}")
+            logger.error(f"Error deleting voice {voice_id}: {e}")
             raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-    def get_cached_audio_tokens(self, voice_name: str) -> Optional[Any]:
-        """Get audio tokens from cache if available."""
+    def get_cached_audio_ids(self, voice_id: str) -> Optional[Any]:
+        """Get audio_ids from cache if available."""
         with self._cache_lock:
-            if voice_name in self._voice_cache:
-                return self._voice_cache[voice_name]["audio_tokens"]
+            if voice_id in self._voice_cache:
+                return self._voice_cache[voice_id]["audio_ids"]
         return None
 
-    def update_cached_audio_tokens(self, voice_name: str, audio_tokens: Any):
-        """Update audio tokens in cache."""
+    def update_cached_audio_ids(self, voice_id: str, audio_ids: Any):
+        """Update audio_ids in cache."""
         with self._cache_lock:
-            if voice_name in self._voice_cache:
-                self._voice_cache[voice_name]["audio_tokens"] = audio_tokens
+            if voice_id in self._voice_cache:
+                self._voice_cache[voice_id]["audio_ids"] = audio_ids
 
     def clear_voice_cache(self):
         """Clear the voice cache."""

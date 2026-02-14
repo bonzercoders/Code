@@ -33,7 +33,7 @@ const alphabet = [
 
 const groupVoicesByLetter = (items: Voice[]) =>
   items.reduce<Record<string, Voice[]>>((groups, voice) => {
-    const letter = voice.name.trim().charAt(0).toUpperCase() || '#'
+    const letter = voice.voice.trim().charAt(0).toUpperCase() || '#'
     if (!groups[letter]) {
       groups[letter] = []
     }
@@ -71,7 +71,7 @@ function VoiceDirectory({
     }
 
     return voices.filter((voice) => {
-      const haystack = `${voice.name} ${voice.method} ${voice.speakerDescription}`.toLowerCase()
+      const haystack = `${voice.voice} ${voice.method} ${voice.speakerDescription}`.toLowerCase()
       return haystack.includes(normalizedQuery)
     })
   }, [normalizedQuery, voices])
@@ -80,7 +80,7 @@ function VoiceDirectory({
     const grouped = groupVoicesByLetter(filteredVoices)
     Object.keys(grouped).forEach((letter) => {
       grouped[letter] = grouped[letter].slice().sort((a, b) => {
-        return a.name.localeCompare(b.name)
+        return a.voice.localeCompare(b.voice)
       })
     })
     return grouped
@@ -165,20 +165,20 @@ function VoiceDirectory({
                         </div>
                         <ItemGroup>
                           {items.map((voice, index) => {
-                            const isSelected = selectedId === voice.id
+                            const isSelected = selectedId === voice.voiceId
                             const descriptionPreview = getDescriptionPreview(
                               voice.speakerDescription
                             )
                             return (
-                              <div key={voice.id}>
+                              <div key={voice.voiceId}>
                                 <Item
                                   size="sm"
                                   role="button"
                                   tabIndex={0}
                                   aria-pressed={isSelected}
-                                  onClick={() => onSelect(voice.id)}
+                                  onClick={() => onSelect(voice.voiceId)}
                                   onKeyDown={(event) =>
-                                    handleItemKeyDown(event, voice.id)
+                                    handleItemKeyDown(event, voice.voiceId)
                                   }
                                   className={cn(
                                     'border-[#2a2f36] bg-[#1a1d22]/80',
@@ -192,7 +192,7 @@ function VoiceDirectory({
                                   <ItemContent>
                                     <ItemTitle className="w-full">
                                       <span className="text-sm font-semibold text-[#e2e6ea]">
-                                        {voice.name}
+                                        {voice.voice}
                                       </span>
                                       <div className="ml-auto flex flex-wrap items-center gap-2">
                                         <Badge

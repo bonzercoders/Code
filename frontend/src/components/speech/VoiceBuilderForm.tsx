@@ -67,8 +67,8 @@ function VoiceBuilderForm({
               <Input
                 id="voice-name"
                 placeholder="Enter voice name"
-                value={voice.name}
-                onChange={(event) => onChange({ name: event.target.value })}
+                value={voice.voice}
+                onChange={(event) => onChange({ voice: event.target.value })}
                 className={inputClassName}
               />
             </div>

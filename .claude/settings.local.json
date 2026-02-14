@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(git -C \"D:\\\\Bonzercoders\\\\Code\" show HEAD:backend/database_director.py)",
+      "Bash(python:*)",
+      "Bash(git checkout:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vite build)",
+      "Bash(npm run build:*)"
+    ]
+  }
+}

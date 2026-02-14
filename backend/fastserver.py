@@ -385,11 +385,11 @@ class ChatLLM:
         })
 
         while True:
-            character = self.resolve_next_character(generation)
+            character = self.determine_next_character(generation)
             if character is None:
                 break
 
-            response = await self.generate_character_response(
+            response = await self.initiate_character_response(
                 character=character,
                 on_text_stream_start=self.on_text_stream_start,
                 on_text_stream_stop=self.on_text_stream_stop,
@@ -400,7 +400,7 @@ class ChatLLM:
 
             generation = generation.after_character(response, character.id)
 
-    def parse_next_character(
+    def parse_last_message(
         self,
         text: str,
         active_characters: List[Character],
@@ -429,7 +429,7 @@ class ChatLLM:
 
         return None
 
-    def resolve_next_character(self, generation: Generation) -> Optional[Character]:
+    def determine_next_character(self, generation: Generation) -> Optional[Character]:
         """Decide who speaks next.
 
         1. Parse last message for a character mention.
@@ -437,7 +437,7 @@ class ChatLLM:
         3. User turn with no mention → default to first character.
         4. Character turn with no mention → cycle ends.
         """
-        mentioned = self.parse_next_character(
+        mentioned = self.parse_last_message(
             text=generation.last_message,
             active_characters=self.active_characters,
             exclude_id=generation.last_responder_id,
@@ -471,7 +471,7 @@ class ChatLLM:
 
         return messages
 
-    async def generate_character_response(self,
+    async def initiate_character_response(self,
                                           character: Character,
                                           on_text_stream_start: Optional[Callable[[Character, str], Awaitable[None]]] = None,
                                           on_text_stream_stop: Optional[Callable[[Character, str, str], Awaitable[None]]] = None) -> Optional[str]:

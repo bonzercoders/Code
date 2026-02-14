@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import CharacterDirectory from '@/components/characters/CharacterDirectory'
 import CharacterEditor from '@/components/characters/CharacterEditor'
 import { type Character } from '@/components/characters/types'
-import { cn } from '@/lib/utils'
-
-const STORAGE_KEY = 'bosun.characters'
-const EDITOR_ENTER_MS = 280
-const EDITOR_EXIT_MS = 200
+import {
+  fetchCharacters,
+  createCharacter as apiCreateCharacter,
+  updateCharacter as apiUpdateCharacter,
+  deleteCharacter as apiDeleteCharacter,
+  generateCharacterId,
+} from '@/lib/api/characters'
+import { broadcastCharacterChange } from '@/lib/broadcast'
 
 type DraftState = {
   draft: Character
@@ -23,145 +26,35 @@ const createCharacter = (id: string): Character => ({
   imageDataUrl: undefined,
 })
 
-const createId = () => {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID()
-  }
-  return `character-${Date.now()}`
-}
-
-const loadStoredCharacters = (): Character[] => {
-  if (typeof window === 'undefined') {
-    return []
-  }
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY)
-    if (!stored) {
-      return []
-    }
-    const parsed = JSON.parse(stored)
-    if (!Array.isArray(parsed)) {
-      return []
-    }
-    return parsed
-      .filter((item): item is Partial<Character> & { id: string } => {
-        return (
-          typeof item === 'object' &&
-          item !== null &&
-          'id' in item &&
-          typeof item.id === 'string'
-        )
-      })
-      .map((item) => ({
-        id: item.id,
-        name: item.name ?? '',
-        systemPrompt: item.systemPrompt ?? '',
-        globalPrompt: item.globalPrompt ?? '',
-        voice: item.voice,
-        imageDataUrl: item.imageDataUrl,
-      }))
-  } catch {
-    return []
-  }
-}
-
 function CharactersPage() {
-  const [characters, setCharacters] = useState<Character[]>(() =>
-    loadStoredCharacters()
-  )
+  const [characters, setCharacters] = useState<Character[]>([])
+  const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activeDraft, setActiveDraft] = useState<DraftState | null>(null)
-  const [displayedDraft, setDisplayedDraft] = useState<DraftState | null>(null)
-  const [transitionState, setTransitionState] = useState<
-    'idle' | 'enter' | 'exit'
-  >('idle')
+
+  // Load characters from Supabase on mount
+  useEffect(() => {
+    fetchCharacters()
+      .then(setCharacters)
+      .catch((err) => console.error('Failed to load characters:', err))
+      .finally(() => setLoading(false))
+  }, [])
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(characters))
-  }, [characters])
-
-  useEffect(() => {
-    if (
-      selectedId &&
-      !characters.some((character) => character.id === selectedId)
-    ) {
+    if (selectedId && !characters.some((char) => char.id === selectedId)) {
       setSelectedId(null)
     }
   }, [characters, selectedId])
 
-  useEffect(() => {
-    const activeId = activeDraft?.draft.id ?? null
-    const displayedId = displayedDraft?.draft.id ?? null
-
-    if (activeId === displayedId) {
-      return
-    }
-
-    if (!activeDraft) {
-      if (!displayedDraft) {
-        return
-      }
-      setTransitionState('exit')
-      const timeout = window.setTimeout(() => {
-        setDisplayedDraft(null)
-        setTransitionState('idle')
-      }, EDITOR_EXIT_MS)
-      return () => window.clearTimeout(timeout)
-    }
-
-    if (!displayedDraft) {
-      setDisplayedDraft(activeDraft)
-      setTransitionState('enter')
-      return
-    }
-
-    setTransitionState('exit')
-    const timeout = window.setTimeout(() => {
-      setDisplayedDraft(activeDraft)
-      setTransitionState('enter')
-    }, EDITOR_EXIT_MS)
-    return () => window.clearTimeout(timeout)
-  }, [activeDraft, displayedDraft])
-
-  useEffect(() => {
-    if (transitionState !== 'enter') {
-      return
-    }
-    const timeout = window.setTimeout(() => {
-      setTransitionState('idle')
-    }, EDITOR_ENTER_MS)
-    return () => window.clearTimeout(timeout)
-  }, [transitionState])
-
-  useEffect(() => {
-    if (!activeDraft || !displayedDraft) {
-      return
-    }
-    if (transitionState === 'exit') {
-      return
-    }
-    if (
-      activeDraft.draft.id === displayedDraft.draft.id &&
-      (activeDraft.draft !== displayedDraft.draft ||
-        activeDraft.isNew !== displayedDraft.isNew)
-    ) {
-      setDisplayedDraft(activeDraft)
-    }
-  }, [activeDraft, displayedDraft, transitionState])
-
-  const displayedCharacter = useMemo(() => {
-    return displayedDraft?.draft ?? null
-  }, [displayedDraft])
-
-  const handleCreate = () => {
-    const id = createId()
-    const newCharacter = createCharacter(id)
-    setSelectedId(null)
+  const handleCreate = async () => {
+    // Create temporary character with placeholder ID
+    const tempId = `temp-${Date.now()}`
+    const newCharacter = createCharacter(tempId)
     setActiveDraft({ draft: newCharacter, isNew: true })
   }
 
   const handleSelect = (id: string) => {
-    const selected = characters.find((character) => character.id === id)
+    const selected = characters.find((char) => char.id === id)
     if (!selected) {
       return
     }
@@ -174,18 +67,16 @@ function CharactersPage() {
       if (!previous) {
         return previous
       }
-      const next = { ...previous, draft: { ...previous.draft, ...updates } }
-      setDisplayedDraft((current) => {
-        if (!current || current.draft.id !== previous.draft.id) {
-          return current
-        }
-        return { ...current, draft: { ...current.draft, ...updates } }
-      })
-      return next
+      return { ...previous, draft: { ...previous.draft, ...updates } }
     })
   }
 
-  const handleDelete = () => {
+  const handleClose = useCallback(() => {
+    setSelectedId(null)
+    setActiveDraft(null)
+  }, [])
+
+  const handleDelete = useCallback(async () => {
     if (!activeDraft) {
       return
     }
@@ -194,82 +85,87 @@ function CharactersPage() {
       return
     }
 
-    const id = activeDraft.draft.id
-    setCharacters((previous) =>
-      previous.filter((character) => character.id !== id)
-    )
+    const { id } = activeDraft.draft
+    try {
+      await apiDeleteCharacter(id)
+      await broadcastCharacterChange('deleted', id)
+      setCharacters((previous) => previous.filter((char) => char.id !== id))
+    } catch (err) {
+      console.error('Failed to delete character:', err)
+    }
     if (selectedId === id) {
       setSelectedId(null)
     }
     setActiveDraft(null)
-  }
+  }, [activeDraft, selectedId])
 
-  const handleSave = () => {
+  const handleSave = useCallback(async () => {
     if (!activeDraft) {
       return
     }
 
     const { draft, isNew } = activeDraft
-    if (isNew) {
-      setCharacters((previous) => [draft, ...previous])
-    } else {
-      setCharacters((previous) =>
-        previous.map((character) =>
-          character.id === draft.id ? { ...draft } : character
+    try {
+      if (isNew) {
+        // Generate slug-based ID from the character name
+        const characterId = await generateCharacterId(draft.name || 'character')
+        const characterToSave = { ...draft, id: characterId }
+
+        const saved = await apiCreateCharacter(characterToSave)
+        await broadcastCharacterChange('created', saved.id)
+        setCharacters((previous) => [saved, ...previous])
+      } else {
+        const saved = await apiUpdateCharacter(draft)
+        await broadcastCharacterChange('updated', saved.id)
+        setCharacters((previous) =>
+          previous.map((char) => (char.id === saved.id ? saved : char))
         )
-      )
+      }
+    } catch (err) {
+      console.error('Failed to save character:', err)
     }
     setSelectedId(null)
     setActiveDraft(null)
+  }, [activeDraft])
+
+  if (loading) {
+    return (
+      <div className="flex h-full w-full items-center justify-center text-[#7a828c]">
+        Loading characters...
+      </div>
+    )
   }
-
-  const handleChat = () => {}
-
-  const handleClose = () => {
-    setSelectedId(null)
-    setActiveDraft(null)
-  }
-
-  const editorAnimationClass = cn(
-    transitionState === 'enter'
-      ? 'editor-fade-in'
-      : transitionState === 'exit'
-        ? 'editor-fade-out'
-        : '',
-    transitionState === 'exit' ? 'pointer-events-none' : ''
-  )
 
   return (
     <div className="h-full w-full p-6">
       <div className="grid h-full min-h-0 w-full gap-8 lg:grid-cols-[1.25fr_3fr]">
         <div className="flex h-full min-h-0 w-full flex-col panel-fade-in">
-          <CharacterDirectory
-            characters={characters}
-            selectedId={selectedId}
-            onSelect={handleSelect}
-            onCreate={handleCreate}
-          />
-        </div>
-        <div className="flex h-full min-h-0 w-full flex-col">
-          {displayedCharacter ? (
-            <div className={cn('h-full w-full', editorAnimationClass)}>
-              <CharacterEditor
-                key={displayedCharacter.id}
-                character={displayedCharacter}
-                onChat={handleChat}
-                onChange={handleDraftChange}
-                onClose={handleClose}
-                onDelete={handleDelete}
-                onSave={handleSave}
-              />
-            </div>
-          ) : (
-            <div className="flex h-full w-full items-center justify-center rounded-2xl border border-dashed border-[#2b3139] bg-[#13161a]/40 text-sm text-[#7a828c]">
-              Select a character to edit or create a new one.
-            </div>
-          )}
-        </div>
+        <CharacterDirectory
+          characters={characters}
+          selectedId={selectedId}
+          onSelect={handleSelect}
+          onCreate={handleCreate}
+        />
       </div>
+      <div className="flex w-full flex-1 flex-col">
+        {activeDraft ? (
+          <div className="h-full w-full animate-in fade-in duration-200">
+            <CharacterEditor
+              key={activeDraft.draft.id}
+              character={activeDraft.draft}
+              onChange={handleDraftChange}
+              onClose={handleClose}
+              onDelete={handleDelete}
+              onSave={handleSave}
+            />
+          </div>
+        ) : (
+          <div className="flex h-full w-full items-center justify-center rounded-2xl border border-dashed border-[#2b3139] bg-[#13161a]/40 text-sm text-[#7a828c]">
+            Select a character to edit or create a new one.
+          </div>
+        )}
+      </div>
+    </div>
     </div>
   )
 }
