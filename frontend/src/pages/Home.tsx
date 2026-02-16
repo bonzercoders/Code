@@ -139,7 +139,7 @@ function ModelCombobox() {
           ref={triggerRef}
           disabled={isLoading && modelGroups.length === 0}
           className={cn(
-            'flex w-full items-center justify-between rounded-lg border border-[#2c323a] bg-[#171a1f] px-3 py-2 text-xs text-[#c9cfd6]',
+            'flex min-h-10 w-full items-center justify-between rounded-lg border border-[#2c323a] bg-[#171a1f] px-3.5 py-2.5 text-sm text-[#c9cfd6]',
             'transition-[border-color,color,box-shadow] hover:border-[#77bef554] hover:text-white hover:shadow-[0_0_0_1px_rgba(0,122,204,0.45)]',
             isLoading && modelGroups.length === 0 && 'cursor-not-allowed opacity-60'
           )}
