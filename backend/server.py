@@ -284,7 +284,7 @@ class ChatLLM:
         """Clear Conversation History"""
         self.conversation_history = []
 
-    def get_model_settings(self) -> ModelSettings:
+    async def get_model_settings(self) -> ModelSettings:
         """Return current model settings, or sensible defaults."""
         if self.model_settings:
             return self.model_settings
