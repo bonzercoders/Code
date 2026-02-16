@@ -33,6 +33,10 @@ import {
   CommandSeparator,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  fetchOpenRouterModelGroups,
+  type ModelGroup,
+} from '@/lib/openrouter-models'
 import { cn } from '@/lib/utils'
 
 type ToolbarButtonProps = {
@@ -57,52 +61,64 @@ function ToolbarButton({ label, icon: Icon, children }: ToolbarButtonProps) {
   )
 }
 
-type ModelOption = {
-  value: string
-  label: string
-}
-
-type ModelGroup = {
-  label: string
-  options: ModelOption[]
-}
-
-const modelGroups: ModelGroup[] = [
-  {
-    label: 'Creative',
-    options: [
-      { value: 'mistral-small-creative', label: 'Mistral Small Creative' },
-      { value: 'claude-sonnet', label: 'Claude 3.5 Sonnet' },
-      { value: 'gpt-4o', label: 'GPT-4o' },
-    ],
-  },
-  {
-    label: 'Balanced',
-    options: [
-      { value: 'mistral-medium', label: 'Mistral Medium' },
-      { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
-      { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
-    ],
-  },
-  {
-    label: 'Fast',
-    options: [
-      { value: 'mistral-nemo', label: 'Mistral Nemo' },
-      { value: 'gpt-4.1-nano', label: 'GPT-4.1 Nano' },
-      { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
-    ],
-  },
-]
-
 function ModelCombobox() {
   const [open, setOpen] = useState(false)
-  const [value, setValue] = useState(modelGroups[0].options[0].value)
+  const [modelGroups, setModelGroups] = useState<ModelGroup[]>([])
+  const [value, setValue] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const [triggerWidth, setTriggerWidth] = useState<number | null>(null)
 
   const selected = modelGroups
     .flatMap((group) => group.options)
     .find((option) => option.value === value)
+
+  useEffect(() => {
+    let isCancelled = false
+
+    const loadModelGroups = async () => {
+      setIsLoading(true)
+      setLoadError(null)
+
+      try {
+        const groups = await fetchOpenRouterModelGroups()
+
+        if (isCancelled) {
+          return
+        }
+
+        setModelGroups(groups)
+        setValue((currentValue) => {
+          const hasCurrentValue = groups.some((group) =>
+            group.options.some((option) => option.value === currentValue)
+          )
+
+          if (hasCurrentValue) {
+            return currentValue
+          }
+
+          return groups[0]?.options[0]?.value ?? ''
+        })
+      } catch {
+        if (isCancelled) {
+          return
+        }
+
+        setLoadError('Unable to load models from OpenRouter.')
+      } finally {
+        if (!isCancelled) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    void loadModelGroups()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (!open) {
@@ -121,13 +137,20 @@ function ModelCombobox() {
           role="combobox"
           aria-expanded={open}
           ref={triggerRef}
+          disabled={isLoading && modelGroups.length === 0}
           className={cn(
             'flex w-full items-center justify-between rounded-lg border border-[#2c323a] bg-[#171a1f] px-3 py-2 text-xs text-[#c9cfd6]',
-            'transition-[border-color,color,box-shadow] hover:border-[#77bef554] hover:text-white hover:shadow-[0_0_0_1px_rgba(0,122,204,0.45)]'
+            'transition-[border-color,color,box-shadow] hover:border-[#77bef554] hover:text-white hover:shadow-[0_0_0_1px_rgba(0,122,204,0.45)]',
+            isLoading && modelGroups.length === 0 && 'cursor-not-allowed opacity-60'
           )}
         >
           <span className="truncate text-left">
-            {selected ? selected.label : 'Select model...'}
+            {selected?.label ??
+              (isLoading
+                ? 'Loading models...'
+                : loadError
+                  ? 'Unable to load models'
+                  : 'Select model...')}
           </span>
           <ChevronsUpDown className="h-4 w-4 text-[#7b838d]" />
         </button>
@@ -152,7 +175,11 @@ function ModelCombobox() {
           />
           <CommandList className="model-combobox-list max-h-[280px]">
             <CommandEmpty className="text-[#8b93a0]">
-              No models found.
+              {isLoading
+                ? 'Loading models...'
+                : loadError
+                  ? loadError
+                  : 'No models found.'}
             </CommandEmpty>
             {modelGroups.map((group, index) => (
               <div key={group.label}>

@@ -975,12 +975,11 @@ class WebSocketManager:
             if self.stt:
                 self.stt.stop_listening()
 
-
         elif message_type == "model_settings":
             model_settings = ModelSettings(
-                model=data.get("model", "meta-llama/llama-3.1-8b-instruct"),
-                temperature=float(data.get("temperature", 0.7)),
-                top_p=float(data.get("top_p", 0.9)),
+                model=data.get("model", "openai/gpt-oss-120b"),
+                temperature=float(data.get("temperature", 0.93)),
+                top_p=float(data.get("top_p", 0.95)),
                 min_p=float(data.get("min_p", 0.0)),
                 top_k=int(data.get("top_k", 40)),
                 frequency_penalty=float(data.get("frequency_penalty", 0.0)),
