@@ -51,7 +51,7 @@ class CharacterResponse:
     message_id: str
     character_id: str
     character_name: str
-    voice_id: str
+    voice: str
     text: str = ""
 
 @dataclass
@@ -61,7 +61,7 @@ class TTSSentence:
     message_id: str
     character_id: str
     character_name: str
-    voice_id: str
+    voice: str
 
 @dataclass
 class EndOfCharacterResponse:
@@ -555,7 +555,7 @@ class ChatLLM:
                         message_id=message_id,
                         character_id=character.id,
                         character_name=character.name,
-                        voice_id=character.voice,
+                        voice=character.voice,
                     ))
                     logger.info(f"[LLM] {character.name} sentence {sentence_index}: {sentence_text[:50]}...")
                     sentence_index += 1
@@ -634,7 +634,7 @@ class TTS:
             chunk_index = 0
 
             try:
-                async for pcm_bytes in self.synthesize_speech(sentence.text, sentence.voice_id):
+                async for pcm_bytes in self.synthesize_speech(sentence.text, sentence.voice):
                     await self.queues.tts_queue.put(AudioChunk(audio_bytes=pcm_bytes,
                                                                sentence_index=sentence.index,
                                                                chunk_index=chunk_index,
@@ -753,7 +753,7 @@ class TTS:
         """Get list of available voices formatted for frontend."""
         try:
             db_voices = await db.get_all_voices()
-            voices = [{"id": voice.voice_id, "voice": voice.voice} for voice in db_voices]
+            voices = [{"voice": voice.voice} for voice in db_voices]
             voices.sort(key=lambda item: item["voice"].lower())
             return voices
         except Exception as e:
