@@ -33,8 +33,7 @@ create table public.voices (
   audio_ids jsonb null,
   created_at timestamp with time zone null default now(),
   updated_at timestamp with time zone null default now(),
-  id text null,
-  constraint voices_pkey primary key (voice)
+  constraint voices_pkey primary key (voice_id)
 ) TABLESPACE pg_default;
 
 create trigger update_voices_updated_at BEFORE

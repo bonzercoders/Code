@@ -10,10 +10,10 @@ import json
 import asyncio
 import logging
 import threading
-from typing import List, Optional, Dict, Any, Callable
+from typing import List, Optional, Dict, Any, Callable, Awaitable
 from datetime import datetime
 from pydantic import BaseModel
-from supabase import create_client, Client
+from supabase import acreate_client, AsyncClient
 from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
@@ -148,12 +148,9 @@ class DatabaseDirector:
     Handles Characters, Voices, Conversations, and Messages.
     """
 
-    def __init__(self, supabase_client: Optional[Client] = None):
-        """Initialize with optional Supabase client, or create one from env vars."""
-        if supabase_client:
-            self.supabase = supabase_client
-        else:
-            self.supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    def __init__(self, supabase_client: Optional[AsyncClient] = None):
+        """Initialize with optional async Supabase client."""
+        self.supabase = supabase_client
 
         # Voice cache for performance
         self._voice_cache: Dict[str, Dict[str, Any]] = {}
@@ -164,14 +161,17 @@ class DatabaseDirector:
         self._voice_channel = None
 
         # Callbacks for broadcast events
-        self.on_characters_changed: Optional[Callable] = None
-        self.on_voices_changed: Optional[Callable] = None
+        self.on_characters_changed: Optional[Callable[[], Awaitable[None]]] = None
+        self.on_voices_changed: Optional[Callable[[], Awaitable[None]]] = None
 
     async def init_database(self):
-        """Validate database connection on startup. Supabase client is already created in __init__."""
+        """Initialize async client and validate database connection on startup."""
         try:
+            if self.supabase is None:
+                self.supabase = await acreate_client(SUPABASE_URL, SUPABASE_KEY)
+
             # Quick connectivity check
-            self.supabase.table("characters").select("id").limit(1).execute()
+            await self.supabase.table("characters").select("id").limit(1).execute()
             logger.info("Database connection verified")
         except Exception as e:
             logger.error(f"Database connection check failed: {e}")
@@ -182,38 +182,84 @@ class DatabaseDirector:
         Subscribe to Realtime Broadcast channels for character and voice changes.
         Frontend broadcasts when it creates/updates/deletes characters or voices.
         """
+        if self.supabase is None:
+            raise RuntimeError("Supabase client not initialized. Call init_database() first.")
+
+        # Prevent duplicate subscriptions on hot-reload/restart paths.
+        await self.shutdown_realtime()
+
         # Character changes channel
         self._character_channel = self.supabase.channel('db-characters')
-        await self._character_channel.on_broadcast(
-            'character-changed', self._on_character_changed
-        ).subscribe()
+        self._character_channel.on_broadcast('character-changed', self._on_character_changed)
+        await self._character_channel.subscribe()
         logger.info("Subscribed to db-characters broadcast channel")
 
         # Voice changes channel
         self._voice_channel = self.supabase.channel('db-voices')
-        await self._voice_channel.on_broadcast(
-            'voice-changed', self._on_voice_changed
-        ).subscribe()
+        self._voice_channel.on_broadcast('voice-changed', self._on_voice_changed)
+        await self._voice_channel.subscribe()
         logger.info("Subscribed to db-voices broadcast channel")
+
+    async def shutdown_realtime(self):
+        """Unsubscribe/remove realtime channels during shutdown or re-init."""
+        if self.supabase is None:
+            return
+
+        for channel_attr in ("_character_channel", "_voice_channel"):
+            channel = getattr(self, channel_attr)
+            if channel is None:
+                continue
+            try:
+                await self.supabase.remove_channel(channel)
+            except Exception as e:
+                logger.warning(f"Failed removing channel {channel_attr}: {e}")
+            finally:
+                setattr(self, channel_attr, None)
+
+    @staticmethod
+    def _schedule_callback(callback: Optional[Callable[[], Awaitable[None]]]) -> None:
+        if callback is None:
+            return
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.warning("No running event loop; dropping Supabase callback")
+            return
+
+        try:
+            coro = callback()
+        except Exception as e:
+            logger.error(f"Supabase callback failed before scheduling: {e}")
+            return
+
+        task = loop.create_task(coro)
+        task.add_done_callback(DatabaseDirector._log_task_exception)
+
+    @staticmethod
+    def _log_task_exception(task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc:
+            logger.error(f"Supabase callback failed: {exc}")
 
     def _on_character_changed(self, payload):
         """Callback: frontend changed a character."""
         logger.info(f"Broadcast received: character-changed {payload}")
-        if self.on_characters_changed:
-            asyncio.create_task(self.on_characters_changed())
+        self._schedule_callback(self.on_characters_changed)
 
     def _on_voice_changed(self, payload):
         """Callback: frontend changed a voice. Clear the cache."""
         logger.info(f"Broadcast received: voice-changed {payload}")
         self.clear_voice_cache()
-        if self.on_voices_changed:
-            asyncio.create_task(self.on_voices_changed())
+        self._schedule_callback(self.on_voices_changed)
 
     ########################################
     ##--      Character Operations      --##
     ########################################
 
-    def _generate_character_id(self, name: str) -> str:
+    async def _generate_character_id(self, name: str) -> str:
         """Generate a sequential ID from the character name."""
         base_id = name.lower().strip()
         base_id = re.sub(r'[^a-z0-9\s-]', '', base_id)
@@ -222,7 +268,7 @@ class DatabaseDirector:
         base_id = base_id.strip('-')
 
         try:
-            response = self.supabase.table("characters")\
+            response = await self.supabase.table("characters")\
                 .select("id")\
                 .like("id", f"{base_id}-%")\
                 .execute()
@@ -249,7 +295,7 @@ class DatabaseDirector:
     async def get_all_characters(self) -> List[Character]:
         """Get all characters."""
         try:
-            response = self.supabase.table("characters")\
+            response = await self.supabase.table("characters")\
                 .select("*")\
                 .execute()
 
@@ -280,7 +326,7 @@ class DatabaseDirector:
     async def get_active_characters(self) -> List[Character]:
         """Get all active characters."""
         try:
-            response = self.supabase.table("characters")\
+            response = await self.supabase.table("characters")\
                 .select("*")\
                 .eq("is_active", True)\
                 .execute()
@@ -312,7 +358,7 @@ class DatabaseDirector:
     async def get_character(self, character_id: str) -> Character:
         """Get a specific character by ID."""
         try:
-            response = self.supabase.table("characters")\
+            response = await self.supabase.table("characters")\
                 .select("*")\
                 .eq("id", character_id)\
                 .execute()
@@ -346,7 +392,7 @@ class DatabaseDirector:
     async def create_character(self, character_data: CharacterCreate) -> Character:
         """Create a new character."""
         try:
-            character_id = self._generate_character_id(character_data.name)
+            character_id = await self._generate_character_id(character_data.name)
 
             db_data = {
                 "id": character_id,
@@ -359,7 +405,7 @@ class DatabaseDirector:
                 "is_active": character_data.is_active
             }
 
-            response = self.supabase.table("characters")\
+            response = await self.supabase.table("characters")\
                 .insert(db_data)\
                 .execute()
 
@@ -398,7 +444,7 @@ class DatabaseDirector:
             if not update_data:
                 raise HTTPException(status_code=400, detail="No fields to update")
 
-            response = self.supabase.table("characters")\
+            response = await self.supabase.table("characters")\
                 .update(update_data)\
                 .eq("id", character_id)\
                 .execute()
@@ -423,7 +469,7 @@ class DatabaseDirector:
         try:
             await self.get_character(character_id)
 
-            self.supabase.table("characters")\
+            await self.supabase.table("characters")\
                 .delete()\
                 .eq("id", character_id)\
                 .execute()
@@ -442,7 +488,7 @@ class DatabaseDirector:
     async def search_characters(self, query: str) -> List[Character]:
         """Search characters by name."""
         try:
-            response = self.supabase.table("characters")\
+            response = await self.supabase.table("characters")\
                 .select("*")\
                 .ilike("name", f"%{query}%")\
                 .execute()
@@ -493,7 +539,7 @@ class DatabaseDirector:
     async def get_all_voices(self) -> List[Voice]:
         """Get all voices from database."""
         try:
-            response = self.supabase.table("voices")\
+            response = await self.supabase.table("voices")\
                 .select("*")\
                 .execute()
 
@@ -515,7 +561,7 @@ class DatabaseDirector:
                 return self._voice_cache[voice_id]["config"]
 
         try:
-            response = self.supabase.table("voices")\
+            response = await self.supabase.table("voices")\
                 .select("*")\
                 .eq("voice_id", voice_id)\
                 .execute()
@@ -555,7 +601,7 @@ class DatabaseDirector:
                 "scene_prompt": voice_data.scene_prompt
             }
 
-            response = self.supabase.table("voices")\
+            response = await self.supabase.table("voices")\
                 .insert(db_data)\
                 .execute()
 
@@ -566,9 +612,9 @@ class DatabaseDirector:
 
             # Add to cache
             with self._cache_lock:
-                self._voice_cache[voice_data.voice] = {
+                self._voice_cache[voice_data.voice_id] = {
                     "config": voice,
-                    "audio_tokens": None
+                    "audio_ids": voice.audio_ids
                 }
 
             logger.info(f"Created voice: {voice.voice}")
@@ -602,7 +648,7 @@ class DatabaseDirector:
             if not update_data:
                 raise HTTPException(status_code=400, detail="No fields to update")
 
-            response = self.supabase.table("voices")\
+            response = await self.supabase.table("voices")\
                 .update(update_data)\
                 .eq("voice_id", voice_id)\
                 .execute()
@@ -633,7 +679,7 @@ class DatabaseDirector:
         try:
             await self.get_voice(voice_id)
 
-            self.supabase.table("voices")\
+            await self.supabase.table("voices")\
                 .delete()\
                 .eq("voice_id", voice_id)\
                 .execute()
@@ -702,7 +748,7 @@ class DatabaseDirector:
                 "active_characters": conversation_data.active_characters or []
             }
 
-            response = self.supabase.table("conversations")\
+            response = await self.supabase.table("conversations")\
                 .insert(db_data)\
                 .execute()
 
@@ -730,7 +776,7 @@ class DatabaseDirector:
     async def get_conversation(self, conversation_id: str) -> Conversation:
         """Get a specific conversation by ID."""
         try:
-            response = self.supabase.table("conversations")\
+            response = await self.supabase.table("conversations")\
                 .select("*")\
                 .eq("conversation_id", conversation_id)\
                 .execute()
@@ -773,7 +819,7 @@ class DatabaseDirector:
             if offset > 0:
                 query = query.range(offset, offset + (limit or 1000) - 1)
 
-            response = query.execute()
+            response = await query.execute()
 
             conversations = []
             for row in response.data:
@@ -809,7 +855,7 @@ class DatabaseDirector:
             if not update_data:
                 raise HTTPException(status_code=400, detail="No fields to update")
 
-            response = self.supabase.table("conversations")\
+            response = await self.supabase.table("conversations")\
                 .update(update_data)\
                 .eq("conversation_id", conversation_id)\
                 .execute()
@@ -886,7 +932,7 @@ class DatabaseDirector:
         try:
             await self.get_conversation(conversation_id)
 
-            self.supabase.table("conversations")\
+            await self.supabase.table("conversations")\
                 .delete()\
                 .eq("conversation_id", conversation_id)\
                 .execute()
@@ -936,7 +982,7 @@ class DatabaseDirector:
                 "character_id": message_data.character_id
             }
 
-            response = self.supabase.table("messages")\
+            response = await self.supabase.table("messages")\
                 .insert(db_data)\
                 .execute()
 
@@ -978,7 +1024,7 @@ class DatabaseDirector:
                 for msg in messages
             ]
 
-            response = self.supabase.table("messages")\
+            response = await self.supabase.table("messages")\
                 .insert(db_data)\
                 .execute()
 
@@ -1027,7 +1073,7 @@ class DatabaseDirector:
             if offset > 0:
                 query = query.range(offset, offset + (limit or 1000) - 1)
 
-            response = query.execute()
+            response = await query.execute()
 
             messages = []
             for row in response.data:
@@ -1053,7 +1099,7 @@ class DatabaseDirector:
     async def get_recent_messages(self, conversation_id: str, n: int = 10) -> List[Message]:
         """Get the last N messages from a conversation."""
         try:
-            response = self.supabase.table("messages")\
+            response = await self.supabase.table("messages")\
                 .select("*")\
                 .eq("conversation_id", conversation_id)\
                 .order("created_at", desc=True)\
@@ -1085,7 +1131,7 @@ class DatabaseDirector:
     async def get_last_message(self, conversation_id: str) -> Optional[Message]:
         """Get the last message from a conversation."""
         try:
-            response = self.supabase.table("messages")\
+            response = await self.supabase.table("messages")\
                 .select("*")\
                 .eq("conversation_id", conversation_id)\
                 .order("created_at", desc=True)\
@@ -1116,7 +1162,7 @@ class DatabaseDirector:
     async def get_message_count(self, conversation_id: str) -> int:
         """Get the total number of messages in a conversation."""
         try:
-            response = self.supabase.table("messages")\
+            response = await self.supabase.table("messages")\
                 .select("message_id", count="exact")\
                 .eq("conversation_id", conversation_id)\
                 .execute()
@@ -1132,7 +1178,7 @@ class DatabaseDirector:
     async def delete_message(self, message_id: str) -> bool:
         """Delete a single message."""
         try:
-            response = self.supabase.table("messages")\
+            response = await self.supabase.table("messages")\
                 .delete()\
                 .eq("message_id", message_id)\
                 .execute()
@@ -1147,7 +1193,7 @@ class DatabaseDirector:
     async def delete_messages_for_conversation(self, conversation_id: str) -> bool:
         """Delete all messages for a conversation."""
         try:
-            self.supabase.table("messages")\
+            await self.supabase.table("messages")\
                 .delete()\
                 .eq("conversation_id", conversation_id)\
                 .execute()

@@ -36,6 +36,6 @@ websockets
 websocket-client
 openwakeword>=0.4.0
 openai
-supabase
+supabase>=2.28.0,<3
 nltk
 aiosqlite

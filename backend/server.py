@@ -1037,12 +1037,13 @@ async def lifespan(app: FastAPI):
 
     # Subscribe to Realtime Broadcast channels so frontend changes
     # (characters, voices) are picked up by the backend instantly.
-    db.on_characters_changed = ws_manager.chat.get_active_characters
+    db.on_characters_changed = ws_manager.refresh_active_characters
     await db.subscribe_to_broadcasts()
 
     print("All services initialised!")
     yield
     print("Shutting down services...")
+    await db.shutdown_realtime()
     await ws_manager.shutdown()
     print("All services shut down!")
 
