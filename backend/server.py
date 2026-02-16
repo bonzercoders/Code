@@ -630,7 +630,6 @@ class TTS:
 
         return messages
 
-
     async def tts_worker(self):
         """Background task: pull sentences from queue, synthesize audio, queue chunks."""
 
