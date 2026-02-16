@@ -219,14 +219,13 @@ function ModelCombobox() {
 function HomePage() {
   const [leftOpen, setLeftOpen] = useState(false)
   const [rightOpen, setRightOpen] = useState(false)
-  const leftDrawerWidth = 320
-  const rightDrawerWidth = 320
+  const drawerWidth = 420
 
   return (
     <div className="relative flex h-full w-full overflow-hidden">
       <div
         className="pointer-events-none absolute inset-y-0 left-0 z-10 flex"
-        style={{ width: leftDrawerWidth }}
+        style={{ width: drawerWidth }}
       >
         <div
           className={cn(
@@ -235,7 +234,7 @@ function HomePage() {
             'transition-transform duration-300 ease-out'
           )}
           style={{
-            transform: `translateX(${leftOpen ? 0 : -leftDrawerWidth}px)`,
+            transform: `translateX(${leftOpen ? 0 : -drawerWidth}px)`,
           }}
         >
           <div className="flex h-full flex-col gap-4 p-6 text-sm text-[#cbd1d8]">
@@ -252,7 +251,7 @@ function HomePage() {
           onClick={() => setLeftOpen((value) => !value)}
           className="pointer-events-auto absolute left-0 top-1/2 z-20 transition-transform duration-300 ease-out"
           style={{
-            transform: `translate(${leftOpen ? leftDrawerWidth : 0}px, -50%)`,
+            transform: `translate(${leftOpen ? drawerWidth : 0}px, -50%)`,
           }}
         >
           <img
@@ -270,7 +269,7 @@ function HomePage() {
 
       <div
         className="pointer-events-none absolute inset-y-0 right-0 z-10 flex justify-end"
-        style={{ width: rightDrawerWidth }}
+        style={{ width: drawerWidth }}
       >
         <div
           className={cn(
@@ -279,7 +278,7 @@ function HomePage() {
             'transition-transform duration-300 ease-out'
           )}
           style={{
-            transform: `translateX(${rightOpen ? 0 : rightDrawerWidth}px)`,
+            transform: `translateX(${rightOpen ? 0 : drawerWidth}px)`,
           }}
         >
           <div className="flex h-full flex-col gap-4 p-6 text-sm text-[#cbd1d8]">
@@ -301,7 +300,7 @@ function HomePage() {
           onClick={() => setRightOpen((value) => !value)}
           className="pointer-events-auto absolute right-0 top-1/2 z-20 transition-transform duration-300 ease-out"
           style={{
-            transform: `translate(${rightOpen ? -rightDrawerWidth : 0}px, -50%)`,
+            transform: `translate(${rightOpen ? -drawerWidth : 0}px, -50%)`,
           }}
         >
           <img
@@ -315,7 +314,7 @@ function HomePage() {
         </button>
       </div>
 
-      <div className="absolute bottom-6 left-1/2 w-[min(780px,92%)] -translate-x-1/2">
+      <div className="absolute bottom-6 left-1/2 w-[min(860px,92%)] -translate-x-1/2">
         <div className="overflow-hidden rounded-2xl border border-[#333] bg-[#1b1e23] shadow-[0_20px_50px_rgba(0,0,0,0.55)]">
           <div className="flex items-center gap-1 border-b border-[#333] px-3 py-2">
             <ToolbarButton label="Undo" icon={Undo2} />
