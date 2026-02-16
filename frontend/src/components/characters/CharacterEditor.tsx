@@ -269,7 +269,9 @@ function CharacterEditor({
                   variant="outline"
                   className={cn(
                     actionButtonClassName,
-                    'border-[#2f353d] bg-[#1e2228] text-[#cbd2da] hover:border-[#3b424c] hover:bg-[#252a32] hover:text-white'
+                    character.isActive
+                      ? 'border-[#22c55e]/60 bg-[#22c55e]/10 text-[#22c55e] hover:border-[#22c55e]/80 hover:bg-[#22c55e]/20 hover:text-[#22c55e]'
+                      : 'border-[#2f353d] bg-[#1e2228] text-[#cbd2da] hover:border-[#3b424c] hover:bg-[#252a32] hover:text-white'
                   )}
                   type="button"
                   onClick={onChat}

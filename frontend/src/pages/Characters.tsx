@@ -9,6 +9,7 @@ import {
   updateCharacter as apiUpdateCharacter,
   deleteCharacter as apiDeleteCharacter,
   generateCharacterId,
+  setCharacterActive,
 } from '@/lib/api/characters'
 import { broadcastCharacterChange } from '@/lib/broadcast'
 import { fetchVoices } from '@/lib/api/voices'
@@ -143,6 +144,28 @@ function CharactersPage() {
     setActiveDraft(null)
   }, [activeDraft])
 
+  const handleChat = useCallback(async (characterId: string) => {
+    const character = characters.find((char) => char.id === characterId)
+    if (!character) {
+      return
+    }
+
+    try {
+      // Toggle the active status
+      const updated = await setCharacterActive(characterId, !character.isActive)
+      await broadcastCharacterChange('updated', updated.id)
+      setCharacters((previous) =>
+        previous.map((char) => (char.id === updated.id ? updated : char))
+      )
+      // Update the active draft if it's the same character
+      if (activeDraft && activeDraft.draft.id === characterId) {
+        setActiveDraft({ ...activeDraft, draft: updated })
+      }
+    } catch (err) {
+      console.error('Failed to toggle character active status:', err)
+    }
+  }, [characters, activeDraft])
+
   // Transform voices to options for the dropdown
   const voiceOptions: VoiceOption[] = voices.map((voice) => ({
     value: voice.voiceId,
@@ -166,6 +189,7 @@ function CharactersPage() {
           selectedId={selectedId}
           onSelect={handleSelect}
           onCreate={handleCreate}
+          onChat={handleChat}
         />
       </div>
       <div className="flex w-full flex-1 flex-col">
@@ -175,6 +199,7 @@ function CharactersPage() {
               key={activeDraft.draft.id}
               character={activeDraft.draft}
               voiceOptions={voiceOptions}
+              onChat={() => handleChat(activeDraft.draft.id)}
               onChange={handleDraftChange}
               onClose={handleClose}
               onDelete={handleDelete}
