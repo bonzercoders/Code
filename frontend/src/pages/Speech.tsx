@@ -5,6 +5,7 @@ import VoiceDirectory from '@/components/speech/VoiceDirectory'
 import { type Voice } from '@/components/speech/types'
 import {
   fetchVoices,
+  generateVoiceId,
   createVoice as apiCreateVoice,
   updateVoice as apiUpdateVoice,
   deleteVoice as apiDeleteVoice,
@@ -47,7 +48,7 @@ function SpeechPage() {
   }, [voices, selectedId])
 
   const handleCreate = () => {
-    const voiceId = crypto.randomUUID()
+    const voiceId = `temp-${Date.now()}`
     const newVoice = createVoice(voiceId)
     setActiveDraft({ draft: newVoice, isNew: true })
   }
@@ -82,8 +83,12 @@ function SpeechPage() {
     const { voiceId, voice } = activeDraft.draft
     try {
       await apiDeleteVoice(voiceId)
-      await broadcastVoiceChange('deleted', voice)
       setVoices((previous) => previous.filter((v) => v.voiceId !== voiceId))
+      try {
+        await broadcastVoiceChange('deleted', voice)
+      } catch (broadcastError) {
+        console.warn('Voice delete broadcast failed:', broadcastError)
+      }
     } catch (err) {
       console.error('Failed to delete voice:', err)
     }
@@ -101,15 +106,25 @@ function SpeechPage() {
     const { draft, isNew } = activeDraft
     try {
       if (isNew) {
-        const saved = await apiCreateVoice(draft)
-        await broadcastVoiceChange('created', saved.voice)
+        const voiceId = await generateVoiceId(draft.voice || 'voice')
+        const voiceToSave = { ...draft, voiceId }
+        const saved = await apiCreateVoice(voiceToSave)
         setVoices((previous) => [saved, ...previous])
+        try {
+          await broadcastVoiceChange('created', saved.voice)
+        } catch (broadcastError) {
+          console.warn('Voice create broadcast failed:', broadcastError)
+        }
       } else {
         const saved = await apiUpdateVoice(draft)
-        await broadcastVoiceChange('updated', saved.voice)
         setVoices((previous) =>
           previous.map((voice) => (voice.voiceId === saved.voiceId ? saved : voice))
         )
+        try {
+          await broadcastVoiceChange('updated', saved.voice)
+        } catch (broadcastError) {
+          console.warn('Voice update broadcast failed:', broadcastError)
+        }
       }
     } catch (err) {
       console.error('Failed to save voice:', err)

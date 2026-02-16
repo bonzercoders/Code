@@ -30,7 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Optional, Dict, List, Union, Any, AsyncIterator, AsyncGenerator, Awaitable, Set, Tuple
-from backend.database_director import db, Character, Conversation, MessageCreate
+from backend.database_director import db, Character, Voice, Conversation, MessageCreate
 from backend.RealtimeSTT import AudioToTextRecorder
 from backend.stream2sentence import generate_sentences_async
 from backend.boson_multimodal.serve.serve_engine import HiggsAudioServeEngine
@@ -750,42 +750,16 @@ class TTS:
             except Exception as e:
                 logger.warning(f"Error flushing remaining audio: {e}")
 
-    async def load_voice_reference(self, voice: str):
-        """Load reference audio and text for voice cloning from database Voice record."""
-
-        audio_path = os.path.join(self.voice_dir, f"{voice}.wav")
-        text_path = os.path.join(self.voice_dir, f"{voice}.txt")
-
-        with open(text_path, 'r', encoding='utf-8') as f:
-            ref_text = f.read().strip()
-
-        messages = [
-            Message(role="user", content=ref_text),
-            Message(role="assistant", content=AudioContent(audio_url=audio_path))
-        ]
-
-        return messages
-
-    def get_available_voices(self):
-        """Get list of available voices in format expected by frontend"""
-        if not os.path.exists(self.voice_dir):
+    async def get_available_voices(self) -> List[Dict[str, str]]:
+        """Get list of available voices formatted for frontend."""
+        try:
+            db_voices = await db.get_all_voices()
+            voices = [{"id": voice.voice_id, "voice": voice.voice} for voice in db_voices]
+            voices.sort(key=lambda item: item["voice"].lower())
+            return voices
+        except Exception as e:
+            logger.error(f"Error getting available voices: {e}")
             return []
-
-        voices = []
-        for file in os.listdir(self.voice_dir):
-            if file.endswith('.wav'):
-                voice_name = file[:-4]  # Remove .wav extension
-                # Only include if matching .txt file exists
-                if os.path.exists(os.path.join(self.voice_dir, f"{voice_name}.txt")):
-                    # Format: {id: "voice_name", name: "Voice Name"}
-                    display_name = voice_name.replace('_', ' ').title()
-                    voices.append({
-                        "id": voice_name,
-                        "name": display_name
-                    })
-
-        voices.sort(key=lambda v: v['name'])
-        return voices
 
     def shutdown(self):
         """Cleanup resources"""

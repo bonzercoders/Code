@@ -71,7 +71,7 @@ class Voice(BaseModel):
     voice: str              # Display name (human-readable)
     method: str = ""
     ref_audio: str = ""
-    transcript: str = ""
+    ref_text: str = ""
     speaker_desc: str = ""
     scene_prompt: str = ""
     audio_ids: Optional[Any] = None
@@ -84,7 +84,7 @@ class VoiceCreate(BaseModel):
     voice: str
     method: str = ""
     ref_audio: str = ""
-    transcript: str = ""
+    ref_text: str = ""
     speaker_desc: str = ""
     scene_prompt: str = ""
 
@@ -93,7 +93,7 @@ class VoiceUpdate(BaseModel):
     voice: Optional[str] = None
     method: Optional[str] = None
     ref_audio: Optional[str] = None
-    transcript: Optional[str] = None
+    ref_text: Optional[str] = None
     speaker_desc: Optional[str] = None
     scene_prompt: Optional[str] = None
     audio_ids: Optional[Any] = None
@@ -521,6 +521,42 @@ class DatabaseDirector:
     ##--        Voice Operations        --##
     ########################################
 
+    async def generate_voice_id(self, voice: str) -> str:
+        """Generate a sequential ID from the voice"""
+        base_id = voice.lower().strip()
+        base_id = re.sub(r'[^a-z0-9\s-]', '', base_id)
+        base_id = re.sub(r'\s+', '-', base_id)
+        base_id = re.sub(r'-+', '-', base_id)
+        base_id = base_id.strip('-')
+        if not base_id:
+            base_id = "voice"
+
+        try:
+            response = await self.supabase.table("voices")\
+                .select("voice_id")\
+                .like("voice_id", f"{base_id}-%")\
+                .execute()
+
+            highest_num = 0
+            pattern = re.compile(rf"^{re.escape(base_id)}-(\d{{3}})$")
+
+            for row in response.data or []:
+                match = pattern.match(row["voice_id"])
+                if match:
+                    num = int(match.group(1))
+                    highest_num = max(highest_num, num)
+
+            next_num = highest_num + 1
+            voice_id = f"{base_id}-{next_num:03d}"
+
+            logger.info(f"Generated voice id: {voice_id}")
+            return voice_id
+
+        except Exception as e:
+            logger.error(f"Error generating voice id: {e}")
+            return f"{base_id}-001"
+
+
     def _parse_voice_row(self, row: Dict[str, Any]) -> Voice:
         """Helper to parse a database row into a Voice model."""
         return Voice(
@@ -528,7 +564,7 @@ class DatabaseDirector:
             voice=row["voice"],
             method=row.get("method") or "",
             ref_audio=row.get("ref_audio") or "",
-            transcript=row.get("transcript") or "",
+            ref_text=row.get("ref_text") or row.get("transcript") or "",
             speaker_desc=row.get("speaker_desc") or "",
             scene_prompt=row.get("scene_prompt") or "",
             audio_ids=row.get("audio_ids"),
@@ -543,7 +579,9 @@ class DatabaseDirector:
                 .select("*")\
                 .execute()
 
-            voices = [self._parse_voice_row(row) for row in response.data]
+            rows = response.data or []
+            voices = [self._parse_voice_row(row) for row in rows]
+            voices.sort(key=lambda voice: (voice.voice or "").lower())
 
             logger.info(f"Retrieved {len(voices)} voices from database")
             return voices
@@ -596,7 +634,7 @@ class DatabaseDirector:
                 "voice": voice_data.voice,
                 "method": voice_data.method,
                 "ref_audio": voice_data.ref_audio,
-                "transcript": voice_data.transcript,
+                "ref_text": voice_data.ref_text,
                 "speaker_desc": voice_data.speaker_desc,
                 "scene_prompt": voice_data.scene_prompt
             }
@@ -636,8 +674,8 @@ class DatabaseDirector:
                 update_data["method"] = voice_data.method
             if voice_data.ref_audio is not None:
                 update_data["ref_audio"] = voice_data.ref_audio
-            if voice_data.transcript is not None:
-                update_data["transcript"] = voice_data.transcript
+            if voice_data.ref_text is not None:
+                update_data["ref_text"] = voice_data.ref_text
             if voice_data.speaker_desc is not None:
                 update_data["speaker_desc"] = voice_data.speaker_desc
             if voice_data.scene_prompt is not None:
