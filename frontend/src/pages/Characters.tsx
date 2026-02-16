@@ -11,6 +11,13 @@ import {
   generateCharacterId,
 } from '@/lib/api/characters'
 import { broadcastCharacterChange } from '@/lib/broadcast'
+import { fetchVoices } from '@/lib/api/voices'
+import { type Voice } from '@/components/speech/types'
+
+type VoiceOption = {
+  value: string
+  label: string
+}
 
 type DraftState = {
   draft: Character
@@ -28,6 +35,7 @@ const createCharacter = (id: string): Character => ({
 
 function CharactersPage() {
   const [characters, setCharacters] = useState<Character[]>([])
+  const [voices, setVoices] = useState<Voice[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activeDraft, setActiveDraft] = useState<DraftState | null>(null)
@@ -38,6 +46,13 @@ function CharactersPage() {
       .then(setCharacters)
       .catch((err) => console.error('Failed to load characters:', err))
       .finally(() => setLoading(false))
+  }, [])
+
+  // Load voices from Supabase on mount
+  useEffect(() => {
+    fetchVoices()
+      .then(setVoices)
+      .catch((err) => console.error('Failed to load voices:', err))
   }, [])
 
   useEffect(() => {
@@ -128,6 +143,12 @@ function CharactersPage() {
     setActiveDraft(null)
   }, [activeDraft])
 
+  // Transform voices to options for the dropdown
+  const voiceOptions: VoiceOption[] = voices.map((voice) => ({
+    value: voice.voiceId,
+    label: voice.voice,
+  }))
+
   if (loading) {
     return (
       <div className="flex h-full w-full items-center justify-center text-[#7a828c]">
@@ -153,6 +174,7 @@ function CharactersPage() {
             <CharacterEditor
               key={activeDraft.draft.id}
               character={activeDraft.draft}
+              voiceOptions={voiceOptions}
               onChange={handleDraftChange}
               onClose={handleClose}
               onDelete={handleDelete}
