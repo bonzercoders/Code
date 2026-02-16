@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 ##--         Configuration          --##
 ########################################
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://jslevsbvapopncjehhva.supabase.co")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpzbGV2c2J2YXBvcG5jamVoaHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwNTQwOTMsImV4cCI6MjA3MzYzMDA5M30.DotbJM3IrvdVzwfScxOtsSpxq0xsj7XxI3DvdiqDSrE")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://wnqozfubwnwqksjkksfy.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_T28Uvx3MVYHo0opH0Eweqw_kCCNFuvC")
 
 ########################################
 ##--          Data Models           --##
@@ -153,7 +153,7 @@ class DatabaseDirector:
         if supabase_client:
             self.supabase = supabase_client
         else:
-            self.supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+            self.supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
         # Voice cache for performance
         self._voice_cache: Dict[str, Dict[str, Any]] = {}

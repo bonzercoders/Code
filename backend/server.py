@@ -385,11 +385,11 @@ class ChatLLM:
         })
 
         while True:
-            character = self.resolve_next_character(generation)
+            character = self.determine_next_character(generation)
             if character is None:
                 break
 
-            response = await self.generate_character_response(
+            response = await self.initiate_character_response(
                 character=character,
                 on_text_stream_start=self.on_text_stream_start,
                 on_text_stream_stop=self.on_text_stream_stop,
@@ -400,7 +400,7 @@ class ChatLLM:
 
             generation = generation.after_character(response, character.id)
 
-    def parse_next_character(
+    def parse_last_message(
         self,
         text: str,
         active_characters: List[Character],
@@ -429,7 +429,7 @@ class ChatLLM:
 
         return None
 
-    def resolve_next_character(self, generation: Generation) -> Optional[Character]:
+    def determine_next_character(self, generation: Generation) -> Optional[Character]:
         """Decide who speaks next.
 
         1. Parse last message for a character mention.
@@ -437,7 +437,7 @@ class ChatLLM:
         3. User turn with no mention → default to first character.
         4. Character turn with no mention → cycle ends.
         """
-        mentioned = self.parse_next_character(
+        mentioned = self.parse_last_message(
             text=generation.last_message,
             active_characters=self.active_characters,
             exclude_id=generation.last_responder_id,
@@ -471,7 +471,7 @@ class ChatLLM:
 
         return messages
 
-    async def generate_character_response(self,
+    async def initiate_character_response(self,
                                           character: Character,
                                           on_text_stream_start: Optional[Callable[[Character, str], Awaitable[None]]] = None,
                                           on_text_stream_stop: Optional[Callable[[Character, str, str], Awaitable[None]]] = None) -> Optional[str]:
@@ -975,15 +975,21 @@ class WebSocketManager:
             if self.stt:
                 self.stt.stop_listening()
 
+
         elif message_type == "model_settings":
-            settings_data = data.get("settings", {})
-            if settings_data and self.chat:
-                try:
-                    model_settings = ModelSettings(**settings_data)
-                    await self.chat.set_model_settings(model_settings)
-                    logger.info(f"Updated model settings: {model_settings.model}")
-                except Exception as e:
-                    logger.error(f"Invalid model settings: {e}")
+            model_settings = ModelSettings(
+                model=data.get("model", "meta-llama/llama-3.1-8b-instruct"),
+                temperature=float(data.get("temperature", 0.7)),
+                top_p=float(data.get("top_p", 0.9)),
+                min_p=float(data.get("min_p", 0.0)),
+                top_k=int(data.get("top_k", 40)),
+                frequency_penalty=float(data.get("frequency_penalty", 0.0)),
+                presence_penalty=float(data.get("presence_penalty", 0.0)),
+                repetition_penalty=float(data.get("repetition_penalty", 1.0))
+            )
+            if self.chat:
+                self.chat.set_model_settings(model_settings)
+            logger.info(f"Model settings updated: {model_settings.model}")
 
         elif message_type == "clear_history":
             if self.chat:
