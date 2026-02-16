@@ -12,6 +12,7 @@ function fromDb(row: Record<string, unknown>): Character {
     globalPrompt: (row.global_roleplay as string) ?? '',
     voice: (row.voice as string) ?? undefined,
     imageDataUrl: (row.image_url as string) ?? undefined,
+    isActive: (row.is_active as boolean) ?? false,
   }
 }
 
@@ -26,6 +27,7 @@ function toDb(c: Character) {
     global_roleplay: c.globalPrompt,
     voice: c.voice ?? null,
     image_url: c.imageDataUrl ?? null,
+    is_active: c.isActive ?? false,
   }
 }
 
@@ -100,4 +102,16 @@ export async function deleteCharacter(id: string): Promise<void> {
     .eq('id', id)
 
   if (error) throw error
+}
+
+export async function setCharacterActive(id: string, isActive: boolean): Promise<Character> {
+  const { data, error } = await supabase
+    .from('characters')
+    .update({ is_active: isActive })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) throw error
+  return fromDb(data)
 }

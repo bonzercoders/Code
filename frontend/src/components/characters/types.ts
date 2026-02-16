@@ -5,4 +5,5 @@ export type Character = {
   globalPrompt: string
   voice?: string
   imageDataUrl?: string
+  isActive?: boolean
 }
