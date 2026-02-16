@@ -613,23 +613,6 @@ class TTS:
             logger.error(f"Failed to initialize Higgs Audio TTS: {e}")
             raise
 
-    def load_voice_reference(self, voice: str):
-        """Load reference audio and text for voice cloning"""
-        from backend.boson_multimodal.data_types import Message, AudioContent
-
-        audio_path = os.path.join(self.voice_dir, f"{voice}.wav")
-        text_path = os.path.join(self.voice_dir, f"{voice}.txt")
-
-        with open(text_path, 'r', encoding='utf-8') as f:
-            ref_text = f.read().strip()
-
-        messages = [
-            Message(role="user", content=ref_text),
-            Message(role="assistant", content=AudioContent(audio_url=audio_path))
-        ]
-
-        return messages
-
     async def tts_worker(self):
         """Background task: pull sentences from queue, synthesize audio, queue chunks."""
 
@@ -666,6 +649,22 @@ class TTS:
             except Exception as e:
                 logger.error(f"[TTS] Error generating audio: {e}")
 
+    def load_voice_reference(self, voice: str):
+        """Load reference audio and text for voice cloning"""
+
+        audio_path = os.path.join(self.voice_dir, f"{voice}.wav")
+        text_path = os.path.join(self.voice_dir, f"{voice}.txt")
+
+        with open(text_path, 'r', encoding='utf-8') as f:
+            ref_text = f.read().strip()
+
+        messages = [
+            Message(role="user", content=ref_text),
+            Message(role="assistant", content=AudioContent(audio_url=audio_path))
+        ]
+
+        return messages
+    
     async def synthesize_speech(self, text: str, voice: str) -> AsyncGenerator[bytes, None]:
         """Stream PCM16 audio chunks from Higgs Audio engine."""
 
