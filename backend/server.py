@@ -959,7 +959,7 @@ class WebSocketManager:
                 repetition_penalty=float(data.get("repetition_penalty", 1.0))
             )
             if self.chat:
-                self.chat.set_model_settings(model_settings)
+                await self.chat.set_model_settings(model_settings)
             logger.info(f"Model settings updated: {model_settings.model}")
 
         elif message_type == "clear_history":
