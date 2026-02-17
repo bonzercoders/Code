@@ -39,6 +39,11 @@ import {
   type ModelGroup,
 } from '@/lib/openrouter-models'
 import { cn } from '@/lib/utils'
+import {
+  WebSocketClient,
+  type ConnectionStatus,
+  type ModelSettingsMessage,
+} from '@/lib/websocket'
 
 type ToolbarButtonProps = {
   label: string
@@ -165,6 +170,8 @@ const modelParameterConfigs: ModelParameterConfig[] = [
   },
 ]
 
+const DEFAULT_MODEL_ID = 'google/gemini-2.5-flash'
+
 type ModelParameterSliderProps = {
   config: ModelParameterConfig
   value: number
@@ -200,10 +207,14 @@ function ModelParameterSlider({ config, value, onChange }: ModelParameterSliderP
   )
 }
 
-function ModelCombobox() {
+type ModelComboboxProps = {
+  value: string
+  onChange: (nextValue: string) => void
+}
+
+function ModelCombobox({ value, onChange }: ModelComboboxProps) {
   const [open, setOpen] = useState(false)
   const [modelGroups, setModelGroups] = useState<ModelGroup[]>([])
-  const [value, setValue] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
@@ -228,17 +239,6 @@ function ModelCombobox() {
         }
 
         setModelGroups(groups)
-        setValue((currentValue) => {
-          const hasCurrentValue = groups.some((group) =>
-            group.options.some((option) => option.value === currentValue)
-          )
-
-          if (hasCurrentValue) {
-            return currentValue
-          }
-
-          return groups[0]?.options[0]?.value ?? ''
-        })
       } catch {
         if (isCancelled) {
           return
@@ -258,6 +258,24 @@ function ModelCombobox() {
       isCancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (modelGroups.length === 0) {
+      return
+    }
+
+    const hasCurrentValue = modelGroups.some((group) =>
+      group.options.some((option) => option.value === value)
+    )
+    if (hasCurrentValue) {
+      return
+    }
+
+    const fallbackValue = modelGroups[0]?.options[0]?.value ?? ''
+    if (fallbackValue) {
+      onChange(fallbackValue)
+    }
+  }, [modelGroups, onChange, value])
 
   useEffect(() => {
     if (!open) {
@@ -328,7 +346,7 @@ function ModelCombobox() {
                       key={option.value}
                       value={option.value}
                       onSelect={(currentValue) => {
-                        setValue(currentValue)
+                        onChange(currentValue)
                         setOpen(false)
                       }}
                       className="text-sm text-[#c9cfd6] data-[selected=true]:text-white"
@@ -355,13 +373,126 @@ function ModelCombobox() {
   )
 }
 
+function mapModelSettingsMessage(
+  modelId: string,
+  modelParameters: ModelParameterValues
+): ModelSettingsMessage {
+  return {
+    type: 'model_settings',
+    model: modelId || DEFAULT_MODEL_ID,
+    temperature: modelParameters.temperature,
+    top_p: modelParameters.topP,
+    min_p: modelParameters.minP,
+    top_k: Math.round(modelParameters.topK),
+    frequency_penalty: modelParameters.frequencyPenalty,
+    presence_penalty: modelParameters.presencePenalty,
+    repetition_penalty: modelParameters.repetitionPenalty,
+  }
+}
+
 function HomePage() {
   const [leftOpen, setLeftOpen] = useState(false)
   const [rightOpen, setRightOpen] = useState(false)
+  const [connectionStatus, setConnectionStatus] =
+    useState<ConnectionStatus>('disconnected')
+  const [messageText, setMessageText] = useState('')
+  const [selectedModel, setSelectedModel] = useState('')
   const [modelParameters, setModelParameters] = useState<ModelParameterValues>(
     defaultModelParameterValues
   )
+  const websocketClientRef = useRef<WebSocketClient | null>(null)
+  const modelSettingsRef = useRef<ModelSettingsMessage>(
+    mapModelSettingsMessage(DEFAULT_MODEL_ID, defaultModelParameterValues)
+  )
   const drawerWidth = 420
+
+  if (websocketClientRef.current === null) {
+    websocketClientRef.current = new WebSocketClient()
+  }
+
+  useEffect(() => {
+    modelSettingsRef.current = mapModelSettingsMessage(
+      selectedModel || DEFAULT_MODEL_ID,
+      modelParameters
+    )
+  }, [modelParameters, selectedModel])
+
+  useEffect(() => {
+    const websocketClient = websocketClientRef.current
+    if (!websocketClient) {
+      return
+    }
+
+    setConnectionStatus(websocketClient.getStatus())
+
+    const unsubscribeStatus = websocketClient.onStatusChange((status) => {
+      setConnectionStatus(status)
+
+      if (status === 'connected') {
+        websocketClient.send(modelSettingsRef.current)
+      }
+    })
+
+    const unsubscribeMessage = websocketClient.onMessage((message) => {
+      console.debug('[WS] message', message)
+    })
+
+    const unsubscribeBinary = websocketClient.onBinary((audioBuffer) => {
+      console.debug('[WS] binary audio chunk', audioBuffer.byteLength)
+    })
+
+    const unsubscribeError = websocketClient.onError((error) => {
+      console.error('[WS] error', error)
+    })
+
+    void websocketClient.connect().catch((error: unknown) => {
+      console.error('[WS] connect failed', error)
+    })
+
+    return () => {
+      unsubscribeStatus()
+      unsubscribeMessage()
+      unsubscribeBinary()
+      unsubscribeError()
+      websocketClient.disconnect()
+    }
+  }, [])
+
+  const sendUserMessage = () => {
+    const websocketClient = websocketClientRef.current
+    const text = messageText.trim()
+    if (!websocketClient || !text) {
+      return
+    }
+
+    const modelSettingsSent = websocketClient.send(modelSettingsRef.current)
+    const userMessageSent = websocketClient.send({ type: 'user_message', text })
+
+    if (modelSettingsSent && userMessageSent) {
+      setMessageText('')
+    }
+  }
+
+  const connectionLabel =
+    connectionStatus === 'connected'
+      ? 'connected'
+      : connectionStatus === 'disconnected'
+        ? 'disconnected'
+        : 'connecting'
+
+  const connectionColorClass =
+    connectionLabel === 'connected'
+      ? 'text-[#22c55e]'
+      : connectionLabel === 'connecting'
+        ? 'text-[#f59e0b]'
+        : 'text-[#9ca3af]'
+
+  const connectionDotClass =
+    connectionLabel === 'connected'
+      ? 'border-[#16a34a] bg-[#22c55e]'
+      : connectionLabel === 'connecting'
+        ? 'border-[#d97706] bg-[#f59e0b]'
+        : 'border-[#4b5563] bg-[#6b7280]'
 
   return (
     <div className="relative flex h-full w-full overflow-hidden">
@@ -433,7 +564,7 @@ function HomePage() {
                 <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b929b]">
                   Model
                 </div>
-                <ModelCombobox />
+                <ModelCombobox value={selectedModel} onChange={setSelectedModel} />
               </div>
               <div className="space-y-4">
                 <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b929b]">
@@ -515,7 +646,15 @@ function HomePage() {
             <ToolbarButton label="Align right" icon={AlignRight} />
             <div className="ml-auto flex items-center gap-2">
               <span
-                className="h-2.5 w-2.5 rounded-full border border-[#3f4650] bg-[#2a2e34]"
+                className={cn(
+                  'text-[11px] font-medium lowercase tracking-[0.02em]',
+                  connectionColorClass
+                )}
+              >
+                {connectionLabel}
+              </span>
+              <span
+                className={cn('h-2.5 w-2.5 rounded-full border', connectionDotClass)}
                 aria-label="Connection status"
                 title="Connection status"
               />
@@ -528,6 +667,14 @@ function HomePage() {
               'placeholder:text-[#6c7480]'
             )}
             placeholder="Type your message..."
+            value={messageText}
+            onChange={(event) => setMessageText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                sendUserMessage()
+              }
+            }}
           />
 
           <div className="flex items-center justify-between px-3 py-3">
@@ -561,6 +708,7 @@ function HomePage() {
               <button
                 type="button"
                 className="inline-flex items-center gap-2 rounded-lg bg-[#007acc] px-4 py-2 text-xs font-semibold text-white shadow-[0_8px_18px_rgba(0,122,204,0.35)] hover:bg-[#1087d9]"
+                onClick={sendUserMessage}
               >
                 <Send className="h-3.5 w-3.5" />
                 Send
