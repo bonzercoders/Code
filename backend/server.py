@@ -969,9 +969,6 @@ class WebSocketManager:
         elif message_type == "refresh_characters":
             await self.refresh_active_characters()
 
-        elif message_type == "interrupt":
-            await self.handle_interrupt()
-
         else:
             logger.warning(f"Unknown message type: {message_type}")
 
@@ -989,10 +986,6 @@ class WebSocketManager:
         """Send JSON message to client."""
         if self.websocket:
             await self.websocket.send_text(json.dumps(data))
-
-    async def handle_interrupt(self):
-        """Interrupt current generation. (To be implemented.)"""
-        pass
 
 ########################################
 ##--           FastAPI App          --##

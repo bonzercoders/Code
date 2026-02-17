@@ -33,6 +33,7 @@ import {
   CommandSeparator,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Slider } from '@/components/ui/slider'
 import {
   fetchOpenRouterModelGroups,
   type ModelGroup,
@@ -58,6 +59,144 @@ function ToolbarButton({ label, icon: Icon, children }: ToolbarButtonProps) {
     >
       {Icon ? <Icon className="h-3.5 w-3.5" /> : children}
     </button>
+  )
+}
+
+type ModelParameterValues = {
+  temperature: number
+  topP: number
+  minP: number
+  topK: number
+  frequencyPenalty: number
+  presencePenalty: number
+  repetitionPenalty: number
+}
+
+type ModelParameterConfig = {
+  key: keyof ModelParameterValues
+  label: string
+  min: number
+  max: number
+  step: number
+  decimals: number
+  sliderClassName: string
+}
+
+const defaultModelParameterValues: ModelParameterValues = {
+  temperature: 1,
+  topP: 1,
+  minP: 0,
+  topK: 50,
+  frequencyPenalty: 0,
+  presencePenalty: 0,
+  repetitionPenalty: 1,
+}
+
+const modelParameterConfigs: ModelParameterConfig[] = [
+  {
+    key: 'temperature',
+    label: 'Temperature',
+    min: 0,
+    max: 2,
+    step: 0.01,
+    decimals: 2,
+    sliderClassName:
+      '[&_[data-slot=slider-range]]:bg-[#4cc8ff] [&_[data-slot=slider-thumb]]:border-[#4cc8ff] [&_[data-slot=slider-thumb]]:shadow-[0_0_0_3px_rgba(76,200,255,0.22)]',
+  },
+  {
+    key: 'topP',
+    label: 'Top P',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    decimals: 2,
+    sliderClassName:
+      '[&_[data-slot=slider-range]]:bg-[#4deca2] [&_[data-slot=slider-thumb]]:border-[#4deca2] [&_[data-slot=slider-thumb]]:shadow-[0_0_0_3px_rgba(77,236,162,0.2)]',
+  },
+  {
+    key: 'minP',
+    label: 'Min P',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    decimals: 2,
+    sliderClassName:
+      '[&_[data-slot=slider-range]]:bg-[#ffcf5c] [&_[data-slot=slider-thumb]]:border-[#ffcf5c] [&_[data-slot=slider-thumb]]:shadow-[0_0_0_3px_rgba(255,207,92,0.2)]',
+  },
+  {
+    key: 'topK',
+    label: 'Top K',
+    min: 0,
+    max: 100,
+    step: 1,
+    decimals: 0,
+    sliderClassName:
+      '[&_[data-slot=slider-range]]:bg-[#b39bff] [&_[data-slot=slider-thumb]]:border-[#b39bff] [&_[data-slot=slider-thumb]]:shadow-[0_0_0_3px_rgba(179,155,255,0.2)]',
+  },
+  {
+    key: 'frequencyPenalty',
+    label: 'Frequency Penalty',
+    min: -2,
+    max: 2,
+    step: 0.1,
+    decimals: 1,
+    sliderClassName:
+      '[&_[data-slot=slider-range]]:bg-[#ff7c8e] [&_[data-slot=slider-thumb]]:border-[#ff7c8e] [&_[data-slot=slider-thumb]]:shadow-[0_0_0_3px_rgba(255,124,142,0.2)]',
+  },
+  {
+    key: 'presencePenalty',
+    label: 'Presence Penalty',
+    min: -2,
+    max: 2,
+    step: 0.1,
+    decimals: 1,
+    sliderClassName:
+      '[&_[data-slot=slider-range]]:bg-[#60a5fa] [&_[data-slot=slider-thumb]]:border-[#60a5fa] [&_[data-slot=slider-thumb]]:shadow-[0_0_0_3px_rgba(96,165,250,0.2)]',
+  },
+  {
+    key: 'repetitionPenalty',
+    label: 'Repetition Penalty',
+    min: 0,
+    max: 2,
+    step: 0.01,
+    decimals: 2,
+    sliderClassName:
+      '[&_[data-slot=slider-range]]:bg-[#93e67b] [&_[data-slot=slider-thumb]]:border-[#93e67b] [&_[data-slot=slider-thumb]]:shadow-[0_0_0_3px_rgba(147,230,123,0.2)]',
+  },
+]
+
+type ModelParameterSliderProps = {
+  config: ModelParameterConfig
+  value: number
+  onChange: (nextValue: number) => void
+}
+
+function ModelParameterSlider({ config, value, onChange }: ModelParameterSliderProps) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <label className="text-xs font-medium text-[#aeb5bf]">{config.label}</label>
+        <span className="rounded border border-[#313741] bg-[#1a1e24] px-2 py-0.5 font-mono text-[11px] text-[#d9dee4]">
+          {value.toFixed(config.decimals)}
+        </span>
+      </div>
+      <Slider
+        min={config.min}
+        max={config.max}
+        step={config.step}
+        value={[value]}
+        onValueChange={(sliderValues) => {
+          const nextValue = sliderValues[0]
+          if (typeof nextValue === 'number') {
+            onChange(nextValue)
+          }
+        }}
+        className={cn(
+          'h-5 [&_[data-slot=slider-track]]:h-2 [&_[data-slot=slider-track]]:bg-[#28303a] [&_[data-slot=slider-thumb]]:size-5 [&_[data-slot=slider-thumb]]:border-2 [&_[data-slot=slider-thumb]]:bg-[#f8fbff]',
+          config.sliderClassName
+        )}
+      />
+    </div>
   )
 }
 
@@ -219,6 +358,9 @@ function ModelCombobox() {
 function HomePage() {
   const [leftOpen, setLeftOpen] = useState(false)
   const [rightOpen, setRightOpen] = useState(false)
+  const [modelParameters, setModelParameters] = useState<ModelParameterValues>(
+    defaultModelParameterValues
+  )
   const drawerWidth = 420
 
   return (
@@ -281,16 +423,38 @@ function HomePage() {
             transform: `translateX(${rightOpen ? 0 : drawerWidth}px)`,
           }}
         >
-          <div className="flex h-full flex-col gap-4 p-6 text-sm text-[#cbd1d8]">
+          <div className="flex h-full flex-col gap-4 overflow-y-auto p-6 text-sm text-[#cbd1d8]">
             <div className="text-base font-semibold text-white">
               Model Settings
             </div>
             <div className="h-px w-full bg-[#2a2f36]" />
-            <div className="space-y-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b929b]">
-                Model
+            <div className="space-y-6">
+              <div className="space-y-3">
+                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b929b]">
+                  Model
+                </div>
+                <ModelCombobox />
               </div>
-              <ModelCombobox />
+              <div className="space-y-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b929b]">
+                  Parameters
+                </div>
+                <div className="space-y-4">
+                  {modelParameterConfigs.map((config) => (
+                    <ModelParameterSlider
+                      key={config.key}
+                      config={config}
+                      value={modelParameters[config.key]}
+                      onChange={(nextValue) => {
+                        setModelParameters((currentValues) => ({
+                          ...currentValues,
+                          [config.key]: nextValue,
+                        }))
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
