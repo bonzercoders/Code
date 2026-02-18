@@ -57,11 +57,21 @@ export class AudioPlayer {
   }
 
   handleStreamStop(data: { character_id: string; message_id: string }): void {
-    if (!this.receivingSession) return
+    const stoppedSession = this.sessionQueue.find(
+      (session) =>
+        session.messageId === data.message_id &&
+        session.characterId === data.character_id
+    )
+    if (!stoppedSession) return
 
-    const stoppedSession = this.receivingSession
     stoppedSession.done = true
-    this.receivingSession = null
+
+    if (
+      this.receivingSession &&
+      this.receivingSession.messageId === data.message_id
+    ) {
+      this.receivingSession = null
+    }
 
     if (this.sessionQueue[0] === stoppedSession) {
       // The session that just finished receiving IS the currently playing one.

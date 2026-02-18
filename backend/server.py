@@ -216,11 +216,13 @@ class STT:
     def feed_audio(self, audio_bytes: bytes):
         """Feed raw PCM audio bytes (16kHz, 16-bit, mono)"""
 
-        if self.recorder:
-            try:
-                self.recorder.feed_audio(audio_bytes, original_sample_rate=16000)
-            except Exception as e:
-                logger.error(f"Failed to feed audio to recorder: {e}")
+        if not self.is_listening or not self.recorder:
+            return
+
+        try:
+            self.recorder.feed_audio(audio_bytes, original_sample_rate=16000)
+        except Exception as e:
+            logger.error(f"Failed to feed audio to recorder: {e}")
 
     def start_listening(self):
         if self.is_listening:
@@ -235,6 +237,16 @@ class STT:
 
     def stop_listening(self):
         self.is_listening = False
+        if self.recorder:
+            try:
+                self.recorder.abort()
+            except Exception as e:
+                logger.warning(f"Failed to abort recorder cleanly: {e}")
+
+            try:
+                self.recorder.clear_audio_queue()
+            except Exception as e:
+                logger.warning(f"Failed to clear recorder audio queue: {e}")
 
         logger.info("Stopped listening for audio")
 

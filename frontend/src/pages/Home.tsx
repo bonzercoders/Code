@@ -50,6 +50,7 @@ import {
   type ModelSettingsMessage,
 } from '@/lib/websocket'
 import { AudioPlayer } from '@/lib/audioPlayer'
+import { STTAudioCapture } from '@/lib/sttAudioCapture'
 
 type ToolbarButtonProps = {
   label: string
@@ -177,6 +178,7 @@ const modelParameterConfigs: ModelParameterConfig[] = [
 ]
 
 const DEFAULT_MODEL_ID = 'google/gemini-2.5-flash'
+type MicrophoneState = 'off' | 'enabling' | 'on' | 'error'
 
 type ModelParameterSliderProps = {
   config: ModelParameterConfig
@@ -407,15 +409,15 @@ function HomePage() {
     defaultModelParameterValues
   )
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [microphoneState, setMicrophoneState] = useState<MicrophoneState>('off')
   const [characterMap, setCharacterMap] = useState<Map<string, Character>>(new Map())
-  const [activeSpeaker, setActiveSpeaker] = useState<{
-    characterId: string
-    characterName: string
-  } | null>(null)
   const streamingTextRef = useRef<HTMLDivElement | null>(null)
   const streamingMessageIdRef = useRef<string | null>(null)
+  const liveSttMessageIdRef = useRef<string | null>(null)
+  const microphoneStateRef = useRef<MicrophoneState>('off')
   const websocketClientRef = useRef<WebSocketClient | null>(null)
   const audioPlayerRef = useRef<AudioPlayer | null>(null)
+  const sttAudioCaptureRef = useRef<STTAudioCapture | null>(null)
   const modelSettingsRef = useRef<ModelSettingsMessage>(
     mapModelSettingsMessage(DEFAULT_MODEL_ID, defaultModelParameterValues)
   )
@@ -428,11 +430,10 @@ function HomePage() {
   if (audioPlayerRef.current === null) {
     audioPlayerRef.current = new AudioPlayer()
   }
-
-  audioPlayerRef.current.onSpeakerChange = (characterId, characterName) => {
-    setActiveSpeaker(
-      characterId && characterName ? { characterId, characterName } : null
-    )
+  if (sttAudioCaptureRef.current === null) {
+    sttAudioCaptureRef.current = new STTAudioCapture({
+      sendBinary: (data) => websocketClientRef.current?.sendBinary(data) ?? false,
+    })
   }
 
   useEffect(() => {
@@ -441,6 +442,10 @@ function HomePage() {
       modelParameters
     )
   }, [modelParameters, selectedModel])
+
+  useEffect(() => {
+    microphoneStateRef.current = microphoneState
+  }, [microphoneState])
 
   useEffect(() => {
     let cancelled = false
@@ -453,6 +458,188 @@ function HomePage() {
       })
       .catch((err: unknown) => console.error('[Characters] failed to load', err))
     return () => { cancelled = true }
+  }, [])
+
+  const upsertLiveSttMessage = useCallback(
+    (liveText: string) => {
+      setMessages((prev) => {
+        const liveId = liveSttMessageIdRef.current
+
+        if (liveId) {
+          let found = false
+          const next = prev.map((message): ChatMessage => {
+            if (message.id !== liveId) {
+              return message
+            }
+
+            found = true
+            const nextRealtime = { liveText }
+
+            return {
+              ...message,
+              isStreaming: true,
+              content: nextRealtime.liveText,
+              realtime: nextRealtime,
+            }
+          })
+
+          if (found) {
+            return next
+          }
+        }
+
+        const lastMessage = prev[prev.length - 1]
+        if (
+          lastMessage &&
+          lastMessage.role === 'user' &&
+          lastMessage.inputMode === 'stt'
+        ) {
+          liveSttMessageIdRef.current = lastMessage.id
+
+          return prev.map((message): ChatMessage => {
+            if (message.id !== lastMessage.id) {
+              return message
+            }
+
+            return {
+              ...message,
+              isStreaming: true,
+              content: liveText,
+              realtime: { liveText },
+            }
+          })
+        }
+
+        const id = crypto.randomUUID()
+        liveSttMessageIdRef.current = id
+
+        const realtime = { liveText }
+        const liveMessage: ChatMessage = {
+          id,
+          role: 'user',
+          inputMode: 'stt',
+          name: null,
+          characterId: null,
+          content: realtime.liveText,
+          isStreaming: true,
+          realtime,
+        }
+
+        return [
+          ...prev,
+          liveMessage,
+        ]
+      })
+    },
+    []
+  )
+
+  const finalizeLiveSttMessage = useCallback((finalText: string) => {
+    setMessages((prev) => {
+      const trimmedFinal = finalText.trim()
+      const liveId = liveSttMessageIdRef.current
+      liveSttMessageIdRef.current = null
+
+      if (liveId) {
+        let found = false
+        const next = prev.map((message): ChatMessage => {
+          if (message.id !== liveId) {
+            return message
+          }
+
+          found = true
+          return {
+            ...message,
+            inputMode: 'stt',
+            content: trimmedFinal,
+            isStreaming: false,
+            realtime: undefined,
+          }
+        })
+
+        if (found) {
+          if (trimmedFinal) {
+            return next
+          }
+          return next.filter((message) => message.id !== liveId)
+        }
+      }
+
+      const lastMessage = prev[prev.length - 1]
+      if (
+        lastMessage &&
+        lastMessage.role === 'user' &&
+        lastMessage.inputMode === 'stt'
+      ) {
+        if (!trimmedFinal) {
+          return prev
+        }
+
+        return prev.map((message): ChatMessage => {
+          if (message.id !== lastMessage.id) {
+            return message
+          }
+
+          return {
+            ...message,
+            content: trimmedFinal,
+            isStreaming: false,
+            realtime: undefined,
+          }
+        })
+      }
+
+      if (!trimmedFinal) {
+        return prev
+      }
+      const finalMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'user',
+        inputMode: 'stt',
+        name: null,
+        characterId: null,
+        content: trimmedFinal,
+        isStreaming: false,
+      }
+
+      return [
+        ...prev,
+        finalMessage,
+      ]
+    })
+  }, [])
+
+  const sealLiveSttMessage = useCallback(() => {
+    setMessages((prev) => {
+      const liveId = liveSttMessageIdRef.current
+      if (!liveId) {
+        return prev
+      }
+
+      liveSttMessageIdRef.current = null
+
+      return prev.flatMap((message): ChatMessage[] => {
+        if (message.id !== liveId) {
+          return [message]
+        }
+
+        const fallbackText = message.realtime?.liveText || message.content
+
+        if (!fallbackText.trim()) {
+          return []
+        }
+
+        const sealedMessage: ChatMessage = {
+          ...message,
+          inputMode: 'stt',
+          content: fallbackText,
+          isStreaming: false,
+          realtime: undefined,
+        }
+
+        return [sealedMessage]
+      })
+    })
   }, [])
 
   const handleWebSocketMessage = useCallback((message: InboundMessage) => {
@@ -487,12 +674,22 @@ function HomePage() {
           )
         )
       }
+    } else if (message.type === 'stt_update') {
+      upsertLiveSttMessage(message.text)
+    } else if (message.type === 'stt_stabilized') {
+      // `stt_update` is the primary live stream for word-by-word display.
+      // Keep stabilized callbacks passive to avoid visual rewinds/flicker.
+      return
+    } else if (message.type === 'stt_final') {
+      finalizeLiveSttMessage(message.text)
     } else if (message.type === 'audio_stream_start') {
+      sttAudioCaptureRef.current?.setPausedForPlayback(true)
       audioPlayerRef.current?.handleStreamStart(message.data)
     } else if (message.type === 'audio_stream_stop') {
+      sttAudioCaptureRef.current?.setPausedForPlayback(false)
       audioPlayerRef.current?.handleStreamStop(message.data)
     }
-  }, [])
+  }, [finalizeLiveSttMessage, upsertLiveSttMessage])
 
   useEffect(() => {
     const websocketClient = websocketClientRef.current
@@ -507,10 +704,15 @@ function HomePage() {
 
       if (status === 'connected') {
         websocketClient.send(modelSettingsRef.current)
+        if (microphoneStateRef.current === 'on') {
+          websocketClient.send({ type: 'start_listening' })
+        }
       }
 
       // Finalize any in-flight streaming message on disconnect
       if (status === 'disconnected' || status === 'reconnecting') {
+        sttAudioCaptureRef.current?.setPausedForPlayback(false)
+
         const activeId = streamingMessageIdRef.current
         if (activeId) {
           streamingMessageIdRef.current = null
@@ -523,6 +725,8 @@ function HomePage() {
             )
           )
         }
+
+        sealLiveSttMessage()
       }
     })
 
@@ -541,6 +745,13 @@ function HomePage() {
     })
 
     return () => {
+      if (microphoneStateRef.current === 'on') {
+        websocketClient.send({ type: 'stop_listening' })
+      }
+      sttAudioCaptureRef.current?.disable()
+      void sttAudioCaptureRef.current?.destroy()
+      sttAudioCaptureRef.current = null
+
       unsubscribeStatus()
       unsubscribeMessage()
       unsubscribeBinary()
@@ -549,7 +760,54 @@ function HomePage() {
       audioPlayerRef.current?.destroy()
       audioPlayerRef.current = null
     }
-  }, [])
+  }, [handleWebSocketMessage, sealLiveSttMessage])
+
+  const toggleMicrophone = useCallback(async () => {
+    const websocketClient = websocketClientRef.current
+    const sttAudioCapture = sttAudioCaptureRef.current
+
+    if (!websocketClient || !sttAudioCapture) {
+      return
+    }
+
+    if (microphoneStateRef.current === 'enabling') {
+      return
+    }
+
+    if (microphoneStateRef.current === 'on') {
+      websocketClient.send({ type: 'stop_listening' })
+      sttAudioCapture.disable()
+      setMicrophoneState('off')
+      sealLiveSttMessage()
+      return
+    }
+
+    if (websocketClient.getStatus() !== 'connected') {
+      setMicrophoneState('error')
+      console.error('[STT] Cannot start microphone while websocket is disconnected')
+      return
+    }
+
+    setMicrophoneState('enabling')
+
+    const enabled = await sttAudioCapture.enable()
+    if (!enabled) {
+      setMicrophoneState('error')
+      console.error('[STT] Failed to enable audio capture', sttAudioCapture.getState())
+      return
+    }
+
+    const started = websocketClient.send({ type: 'start_listening' })
+    if (!started) {
+      sttAudioCapture.disable()
+      setMicrophoneState('error')
+      console.error('[STT] Failed to send start_listening command')
+      return
+    }
+
+    sttAudioCapture.setPausedForPlayback(false)
+    setMicrophoneState('on')
+  }, [sealLiveSttMessage])
 
   const sendUserMessage = () => {
     const websocketClient = websocketClientRef.current
@@ -567,6 +825,7 @@ function HomePage() {
         {
           id: crypto.randomUUID(),
           role: 'user',
+          inputMode: 'typed',
           name: null,
           characterId: null,
           content: text,
@@ -597,6 +856,26 @@ function HomePage() {
       : connectionLabel === 'connecting'
         ? 'border-[#d97706] bg-[#f59e0b]'
         : 'border-[#4b5563] bg-[#6b7280]'
+
+  const microphoneButtonClass = cn(
+    'inline-flex h-9 w-9 items-center justify-center rounded-full border text-[#c8cdd3]',
+    microphoneState === 'on'
+      ? 'border-[#0d7bc6] bg-[#007acc] text-white hover:bg-[#1087d9]'
+      : microphoneState === 'enabling'
+        ? 'border-[#4b5563] bg-[#2a2f36] text-[#9ca3af]'
+        : microphoneState === 'error'
+          ? 'border-[#b91c1c] bg-[#3a1f22] text-[#fecaca] hover:border-[#ef4444]'
+          : 'border-[#2f353d] bg-[#22252a] hover:border-[#3f4650] hover:text-white'
+  )
+
+  const microphoneLabel =
+    microphoneState === 'on'
+      ? 'Microphone on'
+      : microphoneState === 'enabling'
+        ? 'Enabling microphone'
+        : microphoneState === 'error'
+          ? 'Microphone error'
+          : 'Microphone off'
 
   return (
     <div className="relative flex h-full w-full overflow-hidden">
@@ -809,11 +1088,20 @@ function HomePage() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#2f353d] bg-[#22252a] text-[#c8cdd3] hover:border-[#3f4650] hover:text-white"
-                aria-label="Microphone"
-                title="Microphone"
+                className={microphoneButtonClass}
+                aria-label={microphoneLabel}
+                title={microphoneLabel}
+                onClick={() => {
+                  void toggleMicrophone()
+                }}
+                disabled={microphoneState === 'enabling'}
               >
-                <Mic className="h-4 w-4" />
+                <Mic
+                  className={cn(
+                    'h-4 w-4',
+                    microphoneState === 'enabling' && 'animate-pulse'
+                  )}
+                />
               </button>
               <button
                 type="button"

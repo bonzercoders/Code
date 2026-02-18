@@ -37,7 +37,13 @@ export function MessageArea({ messages, characterMap, streamingRef }: MessageAre
     }
   }, [messages.length])
 
-  const streamingMessageId = messages.findLast((m) => m.isStreaming)?.id ?? null
+  let streamingMessageId: string | null = null
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.isStreaming) {
+      streamingMessageId = messages[index].id
+      break
+    }
+  }
 
   return (
     <div ref={scrollRef} className="h-full overflow-y-auto">

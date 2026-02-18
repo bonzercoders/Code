@@ -22,6 +22,8 @@ export function ChatBubble({ message, character, streamingRef }: ChatBubbleProps
   const isUser = message.role === 'user'
 
   if (isUser) {
+    const realtime = message.isStreaming ? message.realtime : undefined
+
     return (
       <div className="flex justify-end px-4 py-1">
         <div
@@ -30,9 +32,15 @@ export function ChatBubble({ message, character, streamingRef }: ChatBubbleProps
             'bg-[#007acc]/20 text-[#dfe3e8]'
           )}
         >
-          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-            {message.content}
-          </p>
+          {realtime ? (
+            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+              {realtime.liveText || '\u00a0'}
+            </p>
+          ) : (
+            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+              {message.content}
+            </p>
+          )}
         </div>
       </div>
     )
