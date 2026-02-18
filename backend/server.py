@@ -476,7 +476,7 @@ class ChatLLM:
                                           on_text_stream_start: Optional[Callable[[Character, str], Awaitable[None]]] = None,
                                           on_text_stream_stop: Optional[Callable[[Character, str, str], Awaitable[None]]] = None) -> Optional[str]:
 
-        model_settings = self.get_model_settings()
+        model_settings = await self.get_model_settings()
         message_id = str(uuid.uuid4())
         messages = self.build_character_messages(character)
 
