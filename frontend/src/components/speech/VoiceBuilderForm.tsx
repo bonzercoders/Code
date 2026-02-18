@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 
 type VoiceBuilderFormProps = {
-  voice: Voice
+  voiceDraft: Voice
   onChange: (updates: Partial<Voice>) => void
   onSave?: () => void
   onDelete?: () => void
@@ -22,7 +22,7 @@ const methodOptions: { value: VoiceMethod; title: string }[] = [
 ]
 
 function VoiceBuilderForm({
-  voice,
+  voiceDraft,
   onChange,
   onSave,
   onDelete,
@@ -67,8 +67,8 @@ function VoiceBuilderForm({
               <Input
                 id="voice-name"
                 placeholder="Enter voice name"
-                value={voice.voice}
-                onChange={(event) => onChange({ voice: event.target.value })}
+                value={voiceDraft.voiceName}
+                onChange={(event) => onChange({ voiceName: event.target.value })}
                 className={inputClassName}
               />
             </div>
@@ -76,7 +76,7 @@ function VoiceBuilderForm({
             <div className="space-y-3">
               <Label className={labelClassName}>Method</Label>
               <RadioGroup
-                value={voice.method}
+                value={voiceDraft.method}
                 onValueChange={handleMethodChange}
                 className="grid gap-3 sm:grid-cols-2"
               >
@@ -111,7 +111,7 @@ function VoiceBuilderForm({
               <Textarea
                 id="scene-prompt"
                 placeholder="Enter scene prompt"
-                value={voice.scenePrompt}
+                value={voiceDraft.scenePrompt}
                 onChange={(event) =>
                   onChange({ scenePrompt: event.target.value })
                 }
@@ -127,7 +127,7 @@ function VoiceBuilderForm({
                 <Input
                   id="reference-text"
                   placeholder="Enter reference text path"
-                  value={voice.referenceText}
+                  value={voiceDraft.referenceText}
                   onChange={(event) =>
                     onChange({ referenceText: event.target.value })
                   }
@@ -141,7 +141,7 @@ function VoiceBuilderForm({
                 <Input
                   id="reference-audio"
                   placeholder="Enter reference audio path"
-                  value={voice.referenceAudio}
+                  value={voiceDraft.referenceAudio}
                   onChange={(event) =>
                     onChange({ referenceAudio: event.target.value })
                   }
@@ -157,7 +157,7 @@ function VoiceBuilderForm({
               <Textarea
                 id="speaker-description"
                 placeholder="Enter speaker description"
-                value={voice.speakerDescription}
+                value={voiceDraft.speakerDescription}
                 onChange={(event) =>
                   onChange({ speakerDescription: event.target.value })
                 }

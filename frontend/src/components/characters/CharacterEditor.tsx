@@ -215,16 +215,16 @@ function CharacterEditor({
                   <div className="w-full max-w-[360px] space-y-2">
                     <Label className={labelClassName}>Voice</Label>
                     <Select
-                      value={character.voice}
-                      onValueChange={(value) => onChange({ voice: value })}
+                      value={character.voiceId}
+                      onValueChange={(value) => onChange({ voiceId: value })}
                     >
                       <SelectTrigger className={cn(inputClassName, 'w-full')}>
                         <SelectValue placeholder="Select voice" />
                       </SelectTrigger>
                       <SelectContent>
-                        {voiceOptions.map((voice) => (
-                          <SelectItem key={voice.value} value={voice.value}>
-                            {voice.label}
+                        {voiceOptions.map((voiceOption) => (
+                          <SelectItem key={voiceOption.value} value={voiceOption.value}>
+                            {voiceOption.label}
                           </SelectItem>
                         ))}
                       </SelectContent>

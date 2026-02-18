@@ -3,7 +3,7 @@ export type Character = {
   name: string
   systemPrompt: string
   globalPrompt: string
-  voice?: string
+  voiceId?: string
   imageDataUrl?: string
   isActive?: boolean
 }

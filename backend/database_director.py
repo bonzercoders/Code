@@ -33,7 +33,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_T28Uvx3MVYHo0opH0Eweqw_
 class Character(BaseModel):
     id: str
     name: str
-    voice: str = ""
+    voice_id: str = ""
     global_roleplay: str = ""
     system_prompt: str = ""
     image_url: str = ""
@@ -46,7 +46,7 @@ class Character(BaseModel):
 
 class CharacterCreate(BaseModel):
     name: str
-    voice: str = ""
+    voice_id: str = ""
     global_roleplay: str = ""
     system_prompt: str = ""
     image_url: str = ""
@@ -56,7 +56,7 @@ class CharacterCreate(BaseModel):
 
 class CharacterUpdate(BaseModel):
     name: Optional[str] = None
-    voice: Optional[str] = None
+    voice_id: Optional[str] = None
     global_roleplay: Optional[str] = None
     system_prompt: Optional[str] = None
     image_url: Optional[str] = None
@@ -68,7 +68,7 @@ class CharacterUpdate(BaseModel):
 # Voice Models
 class Voice(BaseModel):
     voice_id: str           # Primary key
-    voice: str              # Display name (human-readable)
+    voice_name: str         # Display name (human-readable)
     method: str = ""
     ref_audio: str = ""
     ref_text: str = ""
@@ -81,7 +81,7 @@ class Voice(BaseModel):
 
 class VoiceCreate(BaseModel):
     voice_id: str
-    voice: str
+    voice_name: str
     method: str = ""
     ref_audio: str = ""
     ref_text: str = ""
@@ -90,7 +90,7 @@ class VoiceCreate(BaseModel):
 
 
 class VoiceUpdate(BaseModel):
-    voice: Optional[str] = None
+    voice_name: Optional[str] = None
     method: Optional[str] = None
     ref_audio: Optional[str] = None
     ref_text: Optional[str] = None
@@ -304,7 +304,7 @@ class DatabaseDirector:
                 character_data = {
                     "id": row["id"],
                     "name": row["name"],
-                    "voice": row.get("voice") or "",
+                    "voice_id": row.get("voice_id") or "",
                     "global_roleplay": row.get("global_roleplay") or "",
                     "system_prompt": row.get("system_prompt") or "",
                     "image_url": row.get("image_url") or "",
@@ -336,7 +336,7 @@ class DatabaseDirector:
                 character_data = {
                     "id": row["id"],
                     "name": row["name"],
-                    "voice": row.get("voice") or "",
+                    "voice_id": row.get("voice_id") or "",
                     "global_roleplay": row.get("global_roleplay") or "",
                     "system_prompt": row.get("system_prompt") or "",
                     "image_url": row.get("image_url") or "",
@@ -370,7 +370,7 @@ class DatabaseDirector:
             character_data = {
                 "id": row["id"],
                 "name": row["name"],
-                "voice": row.get("voice") or "",
+                "voice_id": row.get("voice_id") or "",
                 "global_roleplay": row.get("global_roleplay") or "",
                 "system_prompt": row.get("system_prompt") or "",
                 "image_url": row.get("image_url") or "",
@@ -397,7 +397,7 @@ class DatabaseDirector:
             db_data = {
                 "id": character_id,
                 "name": character_data.name,
-                "voice": character_data.voice,
+                "voice_id": character_data.voice_id,
                 "global_roleplay": character_data.global_roleplay,
                 "system_prompt": character_data.system_prompt,
                 "image_url": character_data.image_url,
@@ -426,8 +426,8 @@ class DatabaseDirector:
             update_data = {}
             if character_data.name is not None:
                 update_data["name"] = character_data.name
-            if character_data.voice is not None:
-                update_data["voice"] = character_data.voice
+            if character_data.voice_id is not None:
+                update_data["voice_id"] = character_data.voice_id
             if character_data.global_roleplay is not None:
                 update_data["global_roleplay"] = character_data.global_roleplay
             if character_data.system_prompt is not None:
@@ -498,7 +498,7 @@ class DatabaseDirector:
                 character_data = {
                     "id": row["id"],
                     "name": row["name"],
-                    "voice": row.get("voice") or "",
+                    "voice_id": row.get("voice_id") or "",
                     "global_roleplay": row.get("global_roleplay") or "",
                     "system_prompt": row.get("system_prompt") or "",
                     "image_url": row.get("image_url") or "",
@@ -521,9 +521,9 @@ class DatabaseDirector:
     ##--        Voice Operations        --##
     ########################################
 
-    async def generate_voice_id(self, voice: str) -> str:
-        """Generate a sequential ID from the voice"""
-        base_id = voice.lower().strip()
+    async def generate_voice_id(self, voice_name: str) -> str:
+        """Generate a sequential ID from the voice display name."""
+        base_id = voice_name.lower().strip()
         base_id = re.sub(r'[^a-z0-9\s-]', '', base_id)
         base_id = re.sub(r'\s+', '-', base_id)
         base_id = re.sub(r'-+', '-', base_id)
@@ -561,10 +561,10 @@ class DatabaseDirector:
         """Helper to parse a database row into a Voice model."""
         return Voice(
             voice_id=row["voice_id"],
-            voice=row["voice"],
+            voice_name=row.get("voice_name") or "",
             method=row.get("method") or "",
             ref_audio=row.get("ref_audio") or "",
-            ref_text=row.get("ref_text") or row.get("transcript") or "",
+            ref_text=row.get("ref_text") or "",
             speaker_desc=row.get("speaker_desc") or "",
             scene_prompt=row.get("scene_prompt") or "",
             audio_ids=row.get("audio_ids"),
@@ -581,7 +581,7 @@ class DatabaseDirector:
 
             rows = response.data or []
             voices = [self._parse_voice_row(row) for row in rows]
-            voices.sort(key=lambda voice: (voice.voice or "").lower())
+            voices.sort(key=lambda voice: (voice.voice_name or "").lower())
 
             logger.info(f"Retrieved {len(voices)} voices from database")
             return voices
@@ -631,7 +631,7 @@ class DatabaseDirector:
         try:
             db_data = {
                 "voice_id": voice_data.voice_id,
-                "voice": voice_data.voice,
+                "voice_name": voice_data.voice_name,
                 "method": voice_data.method,
                 "ref_audio": voice_data.ref_audio,
                 "ref_text": voice_data.ref_text,
@@ -655,7 +655,7 @@ class DatabaseDirector:
                     "audio_ids": voice.audio_ids
                 }
 
-            logger.info(f"Created voice: {voice.voice}")
+            logger.info(f"Created voice: {voice.voice_id}")
             return voice
 
         except HTTPException:
@@ -668,8 +668,8 @@ class DatabaseDirector:
         """Update an existing voice."""
         try:
             update_data = {}
-            if voice_data.voice is not None:
-                update_data["voice"] = voice_data.voice
+            if voice_data.voice_name is not None:
+                update_data["voice_name"] = voice_data.voice_name
             if voice_data.method is not None:
                 update_data["method"] = voice_data.method
             if voice_data.ref_audio is not None:

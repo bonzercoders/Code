@@ -17,9 +17,9 @@ type DraftState = {
   isNew: boolean
 }
 
-const createVoice = (voiceId: string): Voice => ({
+const createVoiceDraft = (voiceId: string): Voice => ({
   voiceId,
-  voice: '',
+  voiceName: '',
   method: 'clone',
   scenePrompt: '',
   referenceText: '',
@@ -41,15 +41,9 @@ function SpeechPage() {
       .finally(() => setLoading(false))
   }, [])
 
-  useEffect(() => {
-    if (selectedId && !voices.some((voice) => voice.voiceId === selectedId)) {
-      setSelectedId(null)
-    }
-  }, [voices, selectedId])
-
   const handleCreate = () => {
     const voiceId = `temp-${Date.now()}`
-    const newVoice = createVoice(voiceId)
+    const newVoice = createVoiceDraft(voiceId)
     setActiveDraft({ draft: newVoice, isNew: true })
   }
 
@@ -80,12 +74,12 @@ function SpeechPage() {
       return
     }
 
-    const { voiceId, voice } = activeDraft.draft
+    const { voiceId } = activeDraft.draft
     try {
       await apiDeleteVoice(voiceId)
       setVoices((previous) => previous.filter((v) => v.voiceId !== voiceId))
       try {
-        await broadcastVoiceChange('deleted', voice)
+        await broadcastVoiceChange('deleted', voiceId)
       } catch (broadcastError) {
         console.warn('Voice delete broadcast failed:', broadcastError)
       }
@@ -106,12 +100,12 @@ function SpeechPage() {
     const { draft, isNew } = activeDraft
     try {
       if (isNew) {
-        const voiceId = await generateVoiceId(draft.voice || 'voice')
+        const voiceId = await generateVoiceId(draft.voiceName || 'voice')
         const voiceToSave = { ...draft, voiceId }
         const saved = await apiCreateVoice(voiceToSave)
         setVoices((previous) => [saved, ...previous])
         try {
-          await broadcastVoiceChange('created', saved.voice)
+          await broadcastVoiceChange('created', saved.voiceId)
         } catch (broadcastError) {
           console.warn('Voice create broadcast failed:', broadcastError)
         }
@@ -121,7 +115,7 @@ function SpeechPage() {
           previous.map((voice) => (voice.voiceId === saved.voiceId ? saved : voice))
         )
         try {
-          await broadcastVoiceChange('updated', saved.voice)
+          await broadcastVoiceChange('updated', saved.voiceId)
         } catch (broadcastError) {
           console.warn('Voice update broadcast failed:', broadcastError)
         }
@@ -157,7 +151,7 @@ function SpeechPage() {
           <div className="h-full w-full animate-in fade-in duration-200">
             <VoiceBuilderForm
               key={activeDraft.draft.voiceId}
-              voice={activeDraft.draft}
+              voiceDraft={activeDraft.draft}
               onChange={handleDraftChange}
               onDelete={handleDelete}
               onSave={handleSave}

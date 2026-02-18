@@ -7,10 +7,10 @@ import type { Voice } from '@/components/speech/types'
 function fromDb(row: Record<string, unknown>): Voice {
   return {
     voiceId: row.voice_id as string,        // DB PK
-    voice: row.voice as string,             // Display name
+    voiceName: (row.voice_name as string) ?? '',
     method: (row.method as Voice['method']) === 'profile' ? 'profile' : 'clone',
     scenePrompt: (row.scene_prompt as string) ?? '',
-    referenceText: ((row.ref_text as string) ?? (row.transcript as string)) ?? '',
+    referenceText: (row.ref_text as string) ?? '',
     referenceAudio: (row.ref_audio as string) ?? '',
     speakerDescription: (row.speaker_desc as string) ?? '',
   }
@@ -22,7 +22,7 @@ function fromDb(row: Record<string, unknown>): Voice {
 function toDb(v: Voice) {
   return {
     voice_id: v.voiceId,      // PK
-    voice: v.voice,           // Display name
+    voice_name: v.voiceName,  // Display name
     method: v.method,
     scene_prompt: v.scenePrompt,
     ref_text: v.referenceText,
@@ -35,8 +35,8 @@ function toDb(v: Voice) {
  * Generate a slug-based voice ID (e.g. "amelia-001").
  * Mirrors the backend generate_voice_id algorithm.
  */
-export async function generateVoiceId(name: string): Promise<string> {
-  let baseId = name.toLowerCase().trim()
+export async function generateVoiceId(voiceName: string): Promise<string> {
+  let baseId = voiceName.toLowerCase().trim()
   baseId = baseId.replace(/[^a-z0-9\s-]/g, '')
   baseId = baseId.replace(/\s+/g, '-')
   baseId = baseId.replace(/-+/g, '-')

@@ -56,7 +56,7 @@ search_characters
 class Character(BaseModel):
     id: str
     name: str
-    voice: str = ""
+    voice_id: str = ""
     global_roleplay: str = ""
     system_prompt: str = ""
     image_url: str = ""
@@ -68,7 +68,7 @@ class Character(BaseModel):
 
 class CharacterCreate(BaseModel):
     name: str
-    voice: str = ""
+    voice_id: str = ""
     global_roleplay: str = ""
     system_prompt: str = ""
     image_url: str = ""
@@ -77,7 +77,7 @@ class CharacterCreate(BaseModel):
 
 class CharacterUpdate(BaseModel):
     name: Optional[str] = None
-    voice: Optional[str] = None
+    voice_id: Optional[str] = None
     global_roleplay: Optional[str] = None
     system_prompt: Optional[str] = None
     image_url: Optional[str] = None
@@ -98,32 +98,34 @@ delete_voice
 ```
 
 class Voice(BaseModel):
-    voice: str  # Primary key
+    voice_id: str  # Primary key
+    voice_name: str  # Human-readable name
     method: str = ""
-    audio_path: str = ""
-    text_path: str = ""
+    ref_audio: str = ""
+    ref_text: str = ""
     speaker_desc: str = ""
     scene_prompt: str = ""
-    audio_tokens: Optional[Any] = None
-    id: Optional[str] = None
+    audio_ids: Optional[Any] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
 class VoiceCreate(BaseModel):
-    voice: str
+    voice_id: str
+    voice_name: str
     method: str = ""
-    audio_path: str = ""
-    text_path: str = ""
+    ref_audio: str = ""
+    ref_text: str = ""
     speaker_desc: str = ""
     scene_prompt: str = ""
 
 class VoiceUpdate(BaseModel):
+    voice_name: Optional[str] = None
     method: Optional[str] = None
-    audio_path: Optional[str] = None
-    text_path: Optional[str] = None
+    ref_audio: Optional[str] = None
+    ref_text: Optional[str] = None
     speaker_desc: Optional[str] = None
     scene_prompt: Optional[str] = None
-    audio_tokens: Optional[Any] = None
+    audio_ids: Optional[Any] = None
 
 ```
 

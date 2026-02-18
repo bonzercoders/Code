@@ -32,12 +32,12 @@ const alphabet = [
 ]
 
 const groupVoicesByLetter = (items: Voice[]) =>
-  items.reduce<Record<string, Voice[]>>((groups, voice) => {
-    const letter = voice.voice.trim().charAt(0).toUpperCase() || '#'
+  items.reduce<Record<string, Voice[]>>((groups, voiceRecord) => {
+    const letter = voiceRecord.voiceName.trim().charAt(0).toUpperCase() || '#'
     if (!groups[letter]) {
       groups[letter] = []
     }
-    groups[letter].push(voice)
+    groups[letter].push(voiceRecord)
     return groups
   }, {})
 
@@ -70,8 +70,8 @@ function VoiceDirectory({
       return voices
     }
 
-    return voices.filter((voice) => {
-      const haystack = `${voice.voice} ${voice.method} ${voice.speakerDescription}`.toLowerCase()
+    return voices.filter((voiceRecord) => {
+      const haystack = `${voiceRecord.voiceName} ${voiceRecord.method} ${voiceRecord.speakerDescription}`.toLowerCase()
       return haystack.includes(normalizedQuery)
     })
   }, [normalizedQuery, voices])
@@ -80,7 +80,7 @@ function VoiceDirectory({
     const grouped = groupVoicesByLetter(filteredVoices)
     Object.keys(grouped).forEach((letter) => {
       grouped[letter] = grouped[letter].slice().sort((a, b) => {
-        return a.voice.localeCompare(b.voice)
+        return a.voiceName.localeCompare(b.voiceName)
       })
     })
     return grouped
@@ -164,21 +164,21 @@ function VoiceDirectory({
                           {letter}
                         </div>
                         <ItemGroup>
-                          {items.map((voice, index) => {
-                            const isSelected = selectedId === voice.voiceId
+                          {items.map((voiceRecord, index) => {
+                            const isSelected = selectedId === voiceRecord.voiceId
                             const descriptionPreview = getDescriptionPreview(
-                              voice.speakerDescription
+                              voiceRecord.speakerDescription
                             )
                             return (
-                              <div key={voice.voiceId}>
+                              <div key={voiceRecord.voiceId}>
                                 <Item
                                   size="sm"
                                   role="button"
                                   tabIndex={0}
                                   aria-pressed={isSelected}
-                                  onClick={() => onSelect(voice.voiceId)}
+                                  onClick={() => onSelect(voiceRecord.voiceId)}
                                   onKeyDown={(event) =>
-                                    handleItemKeyDown(event, voice.voiceId)
+                                    handleItemKeyDown(event, voiceRecord.voiceId)
                                   }
                                   className={cn(
                                     'border-[#2a2f36] bg-[#1a1d22]/80',
@@ -192,17 +192,17 @@ function VoiceDirectory({
                                   <ItemContent>
                                     <ItemTitle className="w-full">
                                       <span className="text-sm font-semibold text-[#e2e6ea]">
-                                        {voice.voice}
+                                        {voiceRecord.voiceName}
                                       </span>
                                       <div className="ml-auto flex flex-wrap items-center gap-2">
                                         <Badge
                                           variant="outline"
                                           className={cn(
                                             'border text-[10px] uppercase tracking-[0.2em]',
-                                            methodBadgeStyles[voice.method]
+                                            methodBadgeStyles[voiceRecord.method]
                                           )}
                                         >
-                                          {voice.method}
+                                          {voiceRecord.method}
                                         </Badge>
                                       </div>
                                     </ItemTitle>

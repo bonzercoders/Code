@@ -71,13 +71,13 @@ export async function broadcastCharacterChange(
  */
 export async function broadcastVoiceChange(
   action: 'created' | 'updated' | 'deleted',
-  voiceName: string
+  voiceId: string
 ) {
   const channel = await getBroadcastChannel('db-voices')
   const status = await channel.send({
     type: 'broadcast',
     event: 'voice-changed',
-    payload: { action, voiceName },
+    payload: { action, voiceId },
   })
 
   if (status !== 'ok') {

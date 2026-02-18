@@ -10,7 +10,7 @@ function fromDb(row: Record<string, unknown>): Character {
     name: row.name as string,
     systemPrompt: (row.system_prompt as string) ?? '',
     globalPrompt: (row.global_roleplay as string) ?? '',
-    voice: (row.voice as string) ?? undefined,
+    voiceId: (row.voice_id as string) ?? undefined,
     imageDataUrl: (row.image_url as string) ?? undefined,
     isActive: (row.is_active as boolean) ?? false,
   }
@@ -25,7 +25,7 @@ function toDb(c: Character) {
     name: c.name,
     system_prompt: c.systemPrompt,
     global_roleplay: c.globalPrompt,
-    voice: c.voice ?? null,
+    voice_id: c.voiceId ?? null,
     image_url: c.imageDataUrl ?? null,
     is_active: c.isActive ?? false,
   }

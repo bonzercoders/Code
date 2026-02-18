@@ -51,7 +51,7 @@ class CharacterResponse:
     message_id: str
     character_id: str
     character_name: str
-    voice: str
+    voice_id: str
     text: str = ""
 
 @dataclass
@@ -61,7 +61,7 @@ class TTSSentence:
     message_id: str
     character_id: str
     character_name: str
-    voice: str
+    voice_id: str
 
 @dataclass
 class EndOfCharacterResponse:
@@ -78,7 +78,6 @@ class AudioChunk:
     message_id: str
     character_id: str
     character_name: str
-    is_final: bool = False
 
 @dataclass
 class ModelSettings:
@@ -553,7 +552,7 @@ class ChatLLM:
                         message_id=message_id,
                         character_id=character.id,
                         character_name=character.name,
-                        voice=character.voice,
+                        voice_id=character.voice_id,
                     ))
                     logger.info(f"[LLM] {character.name} sentence {sentence_index}: {sentence_text[:50]}...")
                     sentence_index += 1
@@ -593,7 +592,7 @@ class TTS:
         self.sample_rate: int = 24000
         self.chunk_size: int = 14
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.voice_dir = "/workspace/tts/Code/backend/voices"
+        self.voice_dir = os.path.join(os.path.dirname(__file__), "voices")
 
     async def initialize(self):
         """Initialize the Higgs Audio engine. Called once at startup."""
@@ -632,7 +631,7 @@ class TTS:
             chunk_index = 0
 
             try:
-                async for pcm_bytes in self.synthesize_speech(sentence.text, sentence.voice):
+                async for pcm_bytes in self.synthesize_speech(sentence.text, sentence.voice_id):
                     await self.queues.tts_queue.put(AudioChunk(audio_bytes=pcm_bytes,
                                                                sentence_index=sentence.index,
                                                                chunk_index=chunk_index,
@@ -647,14 +646,39 @@ class TTS:
             except Exception as e:
                 logger.error(f"[TTS] Error generating audio: {e}")
 
-    async def load_voice_reference(self, voice: str):
-        """Load reference audio and text for voice cloning"""
+    def _resolve_reference_path(self, path_value: str) -> str:
+        """Resolve absolute/relative reference paths for voice assets."""
+        candidate = (path_value or "").strip()
+        if not candidate:
+            raise ValueError("Voice reference path is empty")
 
-        audio_path = os.path.join(self.voice_dir, f"{voice}.wav")
-        text_path = os.path.join(self.voice_dir, f"{voice}.txt")
+        if os.path.exists(candidate):
+            return candidate
 
-        with open(text_path, 'r', encoding='utf-8') as f:
-            ref_text = f.read().strip()
+        in_voice_dir = os.path.join(self.voice_dir, candidate)
+        if os.path.exists(in_voice_dir):
+            return in_voice_dir
+
+        raise FileNotFoundError(f"Voice reference path not found: {path_value}")
+
+    async def load_voice_reference(self, voice: Voice):
+        """Load reference audio and text for voice cloning from a Voice record."""
+        if not voice.ref_audio:
+            raise ValueError(f"Voice '{voice.voice_id}' is missing required ref_audio")
+
+        audio_path = self._resolve_reference_path(voice.ref_audio)
+        ref_text_value = (voice.ref_text or "").strip()
+        if not ref_text_value:
+            raise ValueError(f"Voice '{voice.voice_id}' is missing required ref_text")
+
+        if os.path.exists(ref_text_value):
+            with open(ref_text_value, 'r', encoding='utf-8') as f:
+                ref_text = f.read().strip()
+        else:
+            ref_text = ref_text_value
+
+        if not ref_text:
+            raise ValueError(f"Voice '{voice.voice_id}' resolved to empty reference text")
 
         messages = [
             Message(role="user", content=ref_text),
@@ -663,10 +687,14 @@ class TTS:
 
         return messages
     
-    async def synthesize_speech(self, text: str, voice: str) -> AsyncGenerator[bytes, None]:
+    async def synthesize_speech(self, text: str, voice_id: str) -> AsyncGenerator[bytes, None]:
         """Stream PCM16 audio chunks from Higgs Audio engine."""
 
-        messages = await self.load_voice_reference(voice)
+        if not voice_id:
+            raise ValueError("Cannot synthesize speech without voice_id")
+
+        selected_voice = await db.get_voice(voice_id)
+        messages = await self.load_voice_reference(selected_voice)
         messages.append(Message(role="user", content=text))
 
         chat_sample = ChatMLSample(messages=messages)
@@ -751,8 +779,11 @@ class TTS:
         """Get list of available voices formatted for frontend."""
         try:
             db_voices = await db.get_all_voices()
-            voices = [{"voice": voice.voice} for voice in db_voices]
-            voices.sort(key=lambda item: item["voice"].lower())
+            voices = [
+                {"voice_id": voice.voice_id, "voice_name": voice.voice_name}
+                for voice in db_voices
+            ]
+            voices.sort(key=lambda item: item["voice_name"].lower())
             return voices
         except Exception as e:
             logger.error(f"Error getting available voices: {e}")

@@ -30,7 +30,7 @@ const createCharacter = (id: string): Character => ({
   name: '',
   systemPrompt: '',
   globalPrompt: '',
-  voice: undefined,
+  voiceId: undefined,
   imageDataUrl: undefined,
 })
 
@@ -55,12 +55,6 @@ function CharactersPage() {
       .then(setVoices)
       .catch((err) => console.error('Failed to load voices:', err))
   }, [])
-
-  useEffect(() => {
-    if (selectedId && !characters.some((char) => char.id === selectedId)) {
-      setSelectedId(null)
-    }
-  }, [characters, selectedId])
 
   const handleCreate = async () => {
     // Create temporary character with placeholder ID
@@ -167,9 +161,9 @@ function CharactersPage() {
   }, [characters, activeDraft])
 
   // Transform voices to options for the dropdown
-  const voiceOptions: VoiceOption[] = voices.map((voice) => ({
-    value: voice.voiceId,
-    label: voice.voice,
+  const voiceOptions: VoiceOption[] = voices.map((voiceRecord) => ({
+    value: voiceRecord.voiceId,
+    label: voiceRecord.voiceName,
   }))
 
   if (loading) {

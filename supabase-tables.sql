@@ -4,7 +4,7 @@ Publishable Key = 'sb_publishable_T28Uvx3MVYHo0opH0Eweqw_kCCNFuvC';
 create table public.characters (
   name text not null,
   id text not null,
-  voice text null,
+  voice_id text null,
   global_roleplay text null,
   system_prompt text null,
   is_active boolean null default False,
@@ -17,17 +17,18 @@ create table public.characters (
 ) TABLESPACE pg_default;
 
 create index IF not exists idx_characters_character_id on public.characters using btree (id) TABLESPACE pg_default;
+create index IF not exists idx_characters_voice_id on public.characters using btree (voice_id) TABLESPACE pg_default;
 
 create trigger update_characters_updated_at BEFORE
 update on characters for EACH row
 execute FUNCTION update_updated_at_column ();
 
 create table public.voices (
-  voice text not null,
   voice_id text not null,
+  voice_name text not null,
   method text null,
   ref_audio text null,
-  transcript text null,
+  ref_text text null,
   speaker_desc text null,
   scene_prompt text null,
   audio_ids jsonb null,
@@ -39,6 +40,13 @@ create table public.voices (
 create trigger update_voices_updated_at BEFORE
 update on voices for EACH row
 execute FUNCTION update_updated_at_column ();
+
+alter table public.characters
+  add constraint characters_voice_id_fkey
+  foreign key (voice_id)
+  references public.voices (voice_id)
+  on update cascade
+  on delete set null;
 
 create table public.conversations (
   conversation_id uuid not null default extensions.uuid_generate_v4 (),
