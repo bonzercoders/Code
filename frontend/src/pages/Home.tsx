@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlignCenter,
   AlignLeft,
@@ -34,6 +34,10 @@ import {
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Slider } from '@/components/ui/slider'
+import type { Character } from '@/components/characters/types'
+import { MessageArea } from '@/components/chat/MessageArea'
+import type { ChatMessage } from '@/components/chat/types'
+import { fetchCharacters } from '@/lib/api/characters'
 import {
   fetchOpenRouterModelGroups,
   type ModelGroup,
@@ -42,6 +46,7 @@ import { cn } from '@/lib/utils'
 import {
   WebSocketClient,
   type ConnectionStatus,
+  type InboundMessage,
   type ModelSettingsMessage,
 } from '@/lib/websocket'
 
@@ -400,6 +405,10 @@ function HomePage() {
   const [modelParameters, setModelParameters] = useState<ModelParameterValues>(
     defaultModelParameterValues
   )
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [characterMap, setCharacterMap] = useState<Map<string, Character>>(new Map())
+  const streamingTextRef = useRef<HTMLDivElement | null>(null)
+  const streamingMessageIdRef = useRef<string | null>(null)
   const websocketClientRef = useRef<WebSocketClient | null>(null)
   const modelSettingsRef = useRef<ModelSettingsMessage>(
     mapModelSettingsMessage(DEFAULT_MODEL_ID, defaultModelParameterValues)
@@ -418,6 +427,54 @@ function HomePage() {
   }, [modelParameters, selectedModel])
 
   useEffect(() => {
+    let cancelled = false
+    fetchCharacters()
+      .then((chars) => {
+        if (cancelled) return
+        const map = new Map<string, Character>()
+        for (const c of chars) map.set(c.id, c)
+        setCharacterMap(map)
+      })
+      .catch((err: unknown) => console.error('[Characters] failed to load', err))
+    return () => { cancelled = true }
+  }, [])
+
+  const handleWebSocketMessage = useCallback((message: InboundMessage) => {
+    if (message.type === 'text_stream_start') {
+      const { character_id, character_name, message_id } = message.data
+      streamingMessageIdRef.current = message_id
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: message_id,
+          role: 'assistant',
+          name: character_name,
+          characterId: character_id,
+          content: '',
+          isStreaming: true,
+        },
+      ])
+    } else if (message.type === 'text_chunk') {
+      if (message.data.message_id !== streamingMessageIdRef.current) return
+      if (streamingTextRef.current) {
+        streamingTextRef.current.textContent += message.data.text
+      }
+    } else if (message.type === 'text_stream_stop') {
+      const { message_id, text } = message.data
+      streamingMessageIdRef.current = null
+      if (!text.trim()) {
+        setMessages((prev) => prev.filter((m) => m.id !== message_id))
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === message_id ? { ...m, content: text, isStreaming: false } : m
+          )
+        )
+      }
+    }
+  }, [])
+
+  useEffect(() => {
     const websocketClient = websocketClientRef.current
     if (!websocketClient) {
       return
@@ -431,11 +488,25 @@ function HomePage() {
       if (status === 'connected') {
         websocketClient.send(modelSettingsRef.current)
       }
+
+      // Finalize any in-flight streaming message on disconnect
+      if (status === 'disconnected' || status === 'reconnecting') {
+        const activeId = streamingMessageIdRef.current
+        if (activeId) {
+          streamingMessageIdRef.current = null
+          const partialText = streamingTextRef.current?.textContent ?? ''
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === activeId
+                ? { ...m, content: partialText || m.content, isStreaming: false }
+                : m
+            )
+          )
+        }
+      }
     })
 
-    const unsubscribeMessage = websocketClient.onMessage((message) => {
-      console.debug('[WS] message', message)
-    })
+    const unsubscribeMessage = websocketClient.onMessage(handleWebSocketMessage)
 
     const unsubscribeBinary = websocketClient.onBinary((audioBuffer) => {
       console.debug('[WS] binary audio chunk', audioBuffer.byteLength)
@@ -469,6 +540,17 @@ function HomePage() {
     const userMessageSent = websocketClient.send({ type: 'user_message', text })
 
     if (modelSettingsSent && userMessageSent) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: 'user',
+          name: null,
+          characterId: null,
+          content: text,
+          isStreaming: false,
+        },
+      ])
       setMessageText('')
     }
   }
@@ -538,7 +620,13 @@ function HomePage() {
         </button>
       </div>
 
-      <div className="flex-1" />
+      <div className="flex-1 overflow-hidden">
+        <MessageArea
+          messages={messages}
+          characterMap={characterMap}
+          streamingRef={streamingTextRef}
+        />
+      </div>
 
       <div
         className="pointer-events-none absolute inset-y-0 right-0 z-10 flex justify-end"
