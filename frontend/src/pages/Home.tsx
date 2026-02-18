@@ -49,6 +49,7 @@ import {
   type InboundMessage,
   type ModelSettingsMessage,
 } from '@/lib/websocket'
+import { AudioPlayer } from '@/lib/audioPlayer'
 
 type ToolbarButtonProps = {
   label: string
@@ -407,9 +408,14 @@ function HomePage() {
   )
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [characterMap, setCharacterMap] = useState<Map<string, Character>>(new Map())
+  const [activeSpeaker, setActiveSpeaker] = useState<{
+    characterId: string
+    characterName: string
+  } | null>(null)
   const streamingTextRef = useRef<HTMLDivElement | null>(null)
   const streamingMessageIdRef = useRef<string | null>(null)
   const websocketClientRef = useRef<WebSocketClient | null>(null)
+  const audioPlayerRef = useRef<AudioPlayer | null>(null)
   const modelSettingsRef = useRef<ModelSettingsMessage>(
     mapModelSettingsMessage(DEFAULT_MODEL_ID, defaultModelParameterValues)
   )
@@ -417,6 +423,16 @@ function HomePage() {
 
   if (websocketClientRef.current === null) {
     websocketClientRef.current = new WebSocketClient()
+  }
+
+  if (audioPlayerRef.current === null) {
+    audioPlayerRef.current = new AudioPlayer()
+  }
+
+  audioPlayerRef.current.onSpeakerChange = (characterId, characterName) => {
+    setActiveSpeaker(
+      characterId && characterName ? { characterId, characterName } : null
+    )
   }
 
   useEffect(() => {
@@ -471,6 +487,10 @@ function HomePage() {
           )
         )
       }
+    } else if (message.type === 'audio_stream_start') {
+      audioPlayerRef.current?.handleStreamStart(message.data)
+    } else if (message.type === 'audio_stream_stop') {
+      audioPlayerRef.current?.handleStreamStop(message.data)
     }
   }, [])
 
@@ -509,7 +529,7 @@ function HomePage() {
     const unsubscribeMessage = websocketClient.onMessage(handleWebSocketMessage)
 
     const unsubscribeBinary = websocketClient.onBinary((audioBuffer) => {
-      console.debug('[WS] binary audio chunk', audioBuffer.byteLength)
+      audioPlayerRef.current?.handleAudioChunk(audioBuffer)
     })
 
     const unsubscribeError = websocketClient.onError((error) => {
@@ -526,6 +546,8 @@ function HomePage() {
       unsubscribeBinary()
       unsubscribeError()
       websocketClient.disconnect()
+      audioPlayerRef.current?.destroy()
+      audioPlayerRef.current = null
     }
   }, [])
 
