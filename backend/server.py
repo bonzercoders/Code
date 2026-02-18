@@ -472,9 +472,7 @@ class ChatLLM:
         return messages
 
     async def initiate_character_response(self,
-                                          character: Character,
-                                          on_text_stream_start: Optional[Callable[[Character, str], Awaitable[None]]] = None,
-                                          on_text_stream_stop: Optional[Callable[[Character, str, str], Awaitable[None]]] = None) -> Optional[str]:
+                                          character: Character) -> Optional[str]:
 
         model_settings = await self.get_model_settings()
         message_id = str(uuid.uuid4())
@@ -649,7 +647,7 @@ class TTS:
             except Exception as e:
                 logger.error(f"[TTS] Error generating audio: {e}")
 
-    def load_voice_reference(self, voice: str):
+    async def load_voice_reference(self, voice: str):
         """Load reference audio and text for voice cloning"""
 
         audio_path = os.path.join(self.voice_dir, f"{voice}.wav")
@@ -763,7 +761,7 @@ class TTS:
     def shutdown(self):
         """Cleanup resources"""
         logger.info('Shutting down TTS manager')
-        self.serve_engine = None
+        self.engine = None
         self._initialized = False
 
 ########################################
