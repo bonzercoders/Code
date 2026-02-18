@@ -471,7 +471,9 @@ class ChatLLM:
         return messages
 
     async def initiate_character_response(self,
-                                          character: Character) -> Optional[str]:
+                                          character: Character,
+                                          on_text_stream_start: Optional[Callable[[Character, str], Awaitable[None]]] = None,
+                                          on_text_stream_stop: Optional[Callable[[Character, str, str], Awaitable[None]]] = None) -> Optional[str]:
 
         model_settings = await self.get_model_settings()
         message_id = str(uuid.uuid4())
@@ -1082,4 +1084,4 @@ async def websocket_endpoint(websocket: WebSocket):
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=5173)
