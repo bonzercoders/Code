@@ -274,7 +274,7 @@ class ChatLLM:
         self.active_characters = await db.get_active_characters()
         logger.info(f"ChatLLM initialized with {len(self.active_characters)} active characters")
 
-    async def start_new_chat(self):
+    async def start_new_conversation(self):
         """Start a new chat session"""
         self.conversation_history = []
         self.conversation_id = str(uuid.uuid4())
