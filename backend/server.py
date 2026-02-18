@@ -64,7 +64,7 @@ class TTSSentence:
     voice_id: str
 
 @dataclass
-class EndOfCharacterResponse:
+class AudioResponseDone:
     """Typed sentinel — marks end of one character's TTS sentences."""
     message_id: str
     character_id: str
@@ -574,7 +574,13 @@ class ChatLLM:
         except Exception as e:
             logger.error(f"[LLM] Error streaming for {character.name}: {e}")
 
-        logger.info(f"[LLM] {character.name} complete: {sentence_index} sentences")
+        finally:
+            await self.queues.sentence_queue.put(AudioResponseDone(
+                message_id=message_id,
+                character_id=character.id,
+                character_name=character.name,
+            ))
+            logger.info(f"[LLM] {character.name} complete: {sentence_index} sentences, sentinel enqueued")
 
         return response
 
@@ -634,31 +640,35 @@ class TTS:
             except asyncio.CancelledError:
                 break
 
-            if isinstance(item, EndOfCharacterResponse):
-                await self.queues.tts_queue.put(item)
-                logger.info(f"[TTS] End of response for {item.character_name}")
-                continue
-
-            sentence: TTSSentence = item
-
-            logger.info(f"[TTS] Generating audio for sentence {sentence.index}")
-            chunk_index = 0
-
             try:
-                async for pcm_bytes in self.synthesize_speech(sentence.text, sentence.voice_id):
-                    await self.queues.tts_queue.put(AudioChunk(audio_bytes=pcm_bytes,
-                                                               sentence_index=sentence.index,
-                                                               chunk_index=chunk_index,
-                                                               message_id=sentence.message_id,
-                                                               character_id=sentence.character_id,
-                                                               character_name=sentence.character_name)
-                                                               )
-                    chunk_index += 1
+                if isinstance(item, AudioResponseDone):
+                    await self.queues.tts_queue.put(item)
+                    logger.info(f"[TTS] End of response for {item.character_name}")
+                    continue
 
-                logger.info(f"[TTS] {sentence.character_name} #{sentence.index}: {chunk_index} chunks")
+                sentence: TTSSentence = item
 
-            except Exception as e:
-                logger.error(f"[TTS] Error generating audio: {e}")
+                logger.info(f"[TTS] Generating audio for sentence {sentence.index}")
+                chunk_index = 0
+
+                try:
+                    async for pcm_bytes in self.synthesize_speech(sentence.text, sentence.voice_id):
+                        await self.queues.tts_queue.put(AudioChunk(audio_bytes=pcm_bytes,
+                                                                   sentence_index=sentence.index,
+                                                                   chunk_index=chunk_index,
+                                                                   message_id=sentence.message_id,
+                                                                   character_id=sentence.character_id,
+                                                                   character_name=sentence.character_name)
+                                                                   )
+                        chunk_index += 1
+
+                    logger.info(f"[TTS] {sentence.character_name} #{sentence.index}: {chunk_index} chunks")
+
+                except Exception as e:
+                    logger.error(f"[TTS] Error generating audio: {e}")
+
+            finally:
+                self.queues.sentence_queue.task_done()
 
     def _resolve_reference_path(self, path_value: str) -> str:
         """Resolve absolute/relative reference paths for voice assets."""
@@ -896,7 +906,7 @@ class WebSocketManager:
                 item = await self.queues.tts_queue.get()
                 try:
                     # Typed sentinel — this character's audio is done
-                    if isinstance(item, EndOfCharacterResponse):
+                    if isinstance(item, AudioResponseDone):
                         if active_stream_chunk:
                             await self.on_audio_stream_stop(active_stream_chunk)
                         active_stream_chunk = None
